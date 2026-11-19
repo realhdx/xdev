@@ -6,7 +6,7 @@ Generative AI has lowered the barriers to research and creative work. More peopl
 
 **Damn it, AI can already use a computer. Why do you still have to switch windows every time one AI hands work to another?**
 
-xdev lets messages flow freely between AI chats, across apps and devices. You can put the copying and pasting aside. One AI hands its work directly to another, and the line keeps moving on its own.
+xdev lets messages flow freely between AI chats, across apps and devices. Either chat can send the first message or reply to one it receives. You can put the copying and pasting aside. One AI hands its work directly to another, and the line keeps moving on its own.
 
 For cross-device work, Windows PCs connect over SSH and SFTP. Through the command line or a local Model Context Protocol (MCP) connection, an AI assistant can browse, edit and transfer files, run commands on the other PC in Windows or WSL, and start background jobs, check their logs and retrieve the results. If the other client keeps readable transcripts or can export a chat, the assistant taking over can consult the original conversation with permission. It can check what was decided and why, making the handoff more reliable.
 

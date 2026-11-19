@@ -39,7 +39,7 @@ class ProductPackageTests(unittest.TestCase):
             (self.source / name).write_text(f"fixture {name}\n", encoding="utf-8")
         product = self.source / "product"
         product.mkdir()
-        for name in verify.ROOT_FILES:
+        for name in verify.ROOT_FILES | verify.ENGLISH_MANUALS:
             (product / name).write_bytes(b"fixture\n")
         self.deps = self.work / "offline.zip"
         self.deps.write_bytes(b"fixture dependency archive")
@@ -196,6 +196,38 @@ class ProductPackageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Missing required product file"):
             self.build()
         self.assertTrue({"LICENSE", "CITATION.cff"} <= verify.package_filenames("1.0.4"))
+
+    def test_english_manuals_enter_the_kit_at_docs_5(self):
+        for name in verify.ENGLISH_MANUALS:
+            (self.source / "product" / name).unlink()
+        metadata = self.source / "product/release.json"
+        self.release["documentation_revision"] = 4
+        self.select_version("1.0.3")
+        previous = self.build()
+        self.assertEqual(verify.verify_archive(previous["archive"]), self.release)
+        with zipfile.ZipFile(previous["archive"]) as archive:
+            self.assertFalse(verify.ENGLISH_MANUALS.intersection(archive.namelist()))
+
+        self.release["documentation_revision"] = 5
+        metadata.write_text(json.dumps(self.release), encoding="utf-8")
+        (self.source / "README.en.md").write_text("Repository landing page", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Missing required product file"):
+            self.build()
+        for name in verify.ENGLISH_MANUALS:
+            (self.source / "product" / name).write_text(f"Kit manual: {name}", encoding="utf-8")
+        (self.source / "product/RELEASE-NOTES.en.md").write_text("Release page", encoding="utf-8")
+        result = self.build()
+        self.assertEqual(verify.verify_archive(result["archive"]), self.release)
+        with zipfile.ZipFile(result["archive"]) as archive:
+            self.assertNotIn("RELEASE-NOTES.en.md", archive.namelist())
+            for name in verify.ENGLISH_MANUALS:
+                self.assertEqual(archive.read(name), (self.source / "product" / name).read_bytes())
+            target = self.work / "bilingual"
+            archive.extractall(target)
+        self.assertEqual(verify.verify_directory(target), self.release)
+        (target / "README.en.md").unlink()
+        with self.assertRaisesRegex(ValueError, "missing or additional"):
+            verify.verify_directory(target)
 
     def test_extra_unknown_file_or_directory_and_manipulated_manifest_are_rejected(self):
         archive = self.build()["archive"]

@@ -1,5 +1,7 @@
 # 从源码构建 xdev
 
+**简体中文** · [English](BUILDING.en.md)
+
 Windows x64 上使用 64 位 CPython 3.14。基础命令用 Python 标准库即可启动。在仓库根目录运行：
 
 ```powershell

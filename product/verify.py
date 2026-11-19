@@ -25,6 +25,7 @@ INTEGRATION_FILES = {"integrations/.codebuddy-plugin/marketplace.json",
 LEGACY_PACKAGE_FILES = ROOT_FILES | DEPLOY_FILES | INTEGRATION_FILES | {RUNTIME, DEPENDENCIES}
 SKILL_FILE = "integrations/skills/xdev-local/SKILL.md"
 PROJECT_NOTICES = {"LICENSE", "CITATION.cff"}
+ENGLISH_MANUALS = {"README.en.md", "AI-DEPLOY.en.md", "CHANGELOG.en.md"}
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -36,6 +37,8 @@ def package_filenames(version, documentation_revision=0):
     files = LEGACY_PACKAGE_FILES | {SKILL_FILE}
     if (*components, documentation_revision) >= (1, 0, 3, 3):
         files |= PROJECT_NOTICES
+    if (*components, documentation_revision) >= (1, 0, 3, 5):
+        files |= ENGLISH_MANUALS
     return files
 
 

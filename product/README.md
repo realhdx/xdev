@@ -1,10 +1,17 @@
 # xdev Windows Pair
 
+[English](README.en.md) | **简体中文**
+
 把一份文件发到另一台 Windows，在那里运行程序，再让指定的 AI 聊天把处理结果寄回。xdev 将这些操作放在同一套命令行和 MCP 工具中。两台电脑都可以发起操作，同一设备上的多个聊天分别寻址。
 
-- **手动安装**，按下文在两台 Windows 上各安装一次。只想先在本机试用，可以跳过 SSH 配对。
-- **交给 AI 安装**，将发行 ZIP、校验值和部署说明交给能操作目标电脑的助手。[AI 部署手册](AI-DEPLOY.md)
-- 本手册对应 `windows-pair` 1.0.3，资料修订 4。已安装 1.0.3 的用户可直接使用本手册。[版本说明](CHANGELOG.md)
+本手册对应 `windows-pair` 1.0.3，资料修订 5。已安装 1.0.3 的用户可直接使用本手册。[版本说明](CHANGELOG.md)
+
+## 安装方式，二选一
+
+先准备同一发行版本的 ZIP 和对应的 `.zip.sha256` 校验文件，然后选择一种安装方式。
+
+- **[手动安装](#安装与配对)**。按步骤在两台 Windows 上各安装一次。只想先在本机试用，可以跳过 SSH 配对。
+- **[交给 AI 安装](AI-DEPLOY.md)**。把这两个文件和 AI 部署手册交给能操作目标电脑的助手，由它完成安装和验证。
 
 ## 运行条件
 
@@ -34,10 +41,10 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes lab-ssh "python --version"
 
 ### 2. 校验并解压
 
-从同一发行版本下载 `xdev-windows-pair-1.0.3-docs.4.zip` 和同名 `.zip.sha256` 校验文件。在每台电脑的下载目录运行下面的 PowerShell。若没有 `py` 启动器，以 `& '解释器的完整路径'` 替换示例中的 `py -3.14`。
+从同一发行版本下载 `xdev-windows-pair-1.0.3-docs.5.zip` 和同名 `.zip.sha256` 校验文件。在每台电脑的下载目录运行下面的 PowerShell。若没有 `py` 启动器，以 `& '解释器的完整路径'` 替换示例中的 `py -3.14`。
 
 ```powershell
-$zip = (Resolve-Path '.\xdev-windows-pair-1.0.3-docs.4.zip').Path
+$zip = (Resolve-Path '.\xdev-windows-pair-1.0.3-docs.5.zip').Path
 $expected = ((Get-Content -LiteralPath ($zip + '.sha256') -TotalCount 1) -split '\s+')[0]
 if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ine $expected) { throw '发布包校验失败' }
 $kit = Join-Path (Split-Path $zip) ([IO.Path]::GetFileNameWithoutExtension($zip))

@@ -29,10 +29,12 @@ optional = source_module("xdev_release_optional", SOURCE / "deploy/optional.py")
 
 
 def source_inputs(source, version, documentation_revision=0):
-    paths = {name: source / "product" / name for name in verify.ROOT_FILES}
     package = verify.package_filenames(version, documentation_revision)
-    for name in package - verify.ROOT_FILES - {verify.RUNTIME, verify.DEPENDENCIES}:
-        paths[name] = source / name
+    product_inputs = verify.ROOT_FILES | verify.ENGLISH_MANUALS
+    paths = {}
+    for name in package - {verify.RUNTIME, verify.DEPENDENCIES}:
+        directory = source / "product" if name in product_inputs else source
+        paths[name] = directory / name
     for name, path in paths.items():
         relative = path.relative_to(source)
         verify.physical(path)

@@ -1,6 +1,8 @@
 # 使用 AI 安装 xdev
 
-适用于 xdev Windows Pair 1.0.3。部署者需要能在两台目标 Windows 的指定用户账户中运行 PowerShell。准备同一发行 ZIP 及对应的 SHA-256 校验文件；本次资料版本为 `xdev-windows-pair-1.0.3-docs.4.zip`。[手动安装与日常使用](README.md)
+[English](AI-DEPLOY.en.md) | **简体中文**
+
+适用于 xdev Windows Pair 1.0.3。部署者需要能在两台目标 Windows 的指定用户账户中运行 PowerShell。准备同一发行 ZIP 及对应的 SHA-256 校验文件；本次资料版本为 `xdev-windows-pair-1.0.3-docs.5.zip`。[手动安装与日常使用](README.md)
 
 ## 可直接交给助手的任务
 

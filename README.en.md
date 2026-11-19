@@ -10,7 +10,7 @@ xdev lets messages flow freely between AI chats, across apps and devices. You ca
 
 For cross-device work, Windows PCs connect over SSH and SFTP. Through the command line or a local Model Context Protocol (MCP) connection, an AI assistant can browse, edit and transfer files, run commands on the other PC in Windows or WSL, and start background jobs, check their logs and retrieve the results. If the other client keeps readable transcripts or can export a chat, the assistant taking over can consult the original conversation with permission. It can check what was decided and why, making the handoff more reliable.
 
-That gives you time to step back, look at what you’ve made and decide where to take it next.
+Now there’s time to step back and take in what you’ve made, and a little breathing room to think about where you’d like to go from here.
 
 ## Getting started
 

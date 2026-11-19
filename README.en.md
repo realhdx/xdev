@@ -53,7 +53,7 @@ To look up what was said in a particular chat, use `xdev file read` to read a ra
 
 ## Contributing
 
-Chats in Codex, Claude Desktop, DeepSeek Harness and OpenCode have all received messages and sent replies. We also tested round trips in WorkBuddy with help in the app, and in the Gemini and Doubao web apps through a browser relay.
+In tests with Codex, Claude Desktop, DeepSeek Harness and OpenCode, xdev delivered messages to specific chats and routed replies back to the sender, with each reply linked to the original message. We also tested round trips in WorkBuddy with help in the app, and in the Gemini and Doubao web apps through a browser relay.
 
 If you receive your first xdev letter in a new AI client, a pull request with the client version, setup steps and verification method will help others get connected. If a message gets stuck in a queue, open an issue and describe when you expected it to reach the chat and how far it actually got. After changing the code, follow the [build guide](BUILDING.en.md) to run the tests.
 

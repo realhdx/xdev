@@ -53,7 +53,7 @@ $peer = '实验室'
 
 ## 参与改进
 
-Codex、Claude Desktop、DeepSeek Harness 和 OpenCode 的聊天都实际收过信、回过信；WorkBuddy 通过前台协助，Gemini 和豆包网页版通过浏览器转交，也完成了消息往返。
+xdev 的跨会话通信已在 Codex、Claude Desktop、DeepSeek Harness 和 OpenCode 中通过实测，支持向指定聊天发信，并沿原信收到答复。WorkBuddy 通过前台协助，Gemini 和豆包网页版通过浏览器转交，也完成了消息往返。
 
 如果你在一款新的 AI 客户端里收到了第一封 xdev 来信，欢迎提一个 Pull Request，补上客户端版本、接入步骤和验证方法。如果消息停在了等待队列，可以开一个 Issue，告诉大家你希望它怎样抵达、实际又停在了哪一步。修改代码后可按[构建指南](BUILDING.md)运行测试。
 

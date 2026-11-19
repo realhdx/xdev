@@ -2,25 +2,27 @@
 
 **English** · [简体中文](README.md)
 
-Generative AI has lowered the barriers to research and creative work. More people can put their talents to work and turn an idea into something real. Twice the computing power can mean twice the output. It gives you no more hours to review it. That imbalance turns time saved in creation into pressure at review. Early factories in the Industrial Revolution faced a similar bottleneck: machines sped up, but someone still had to move each piece to the next station. Today, AI tools work in parallel, then queue up for someone to pass a message. The promise of artificial intelligence has become intelligence plus manual labor. The creator is back on the assembly line, tightening one screw as the next comes within reach.
+Generative AI has lowered the barriers to research and creative work. More people can put their talents to work and turn an idea into something real. Twice the computing power can mean twice the output. Yet you have no extra time to review it. That imbalance turns time saved in creation into pressure at review. Early factories in the Industrial Revolution faced a similar bottleneck: machines sped up, but someone still had to move each piece to the next station. Today, AI tools work in parallel, then queue up for someone to pass a message. The promise of artificial intelligence has become intelligence plus manual labor. The creator is back on the assembly line, tightening one screw as the next comes within reach.
 
 **Damn it, AI can already use a computer. Why do you still have to switch windows every time one AI hands work to another?**
 
-xdev lets messages travel between connected AI chats, whether they share an app or a computer or run on different ones. You can put the copying and pasting aside. One AI hands its work directly to another, and the line keeps moving on its own.
+xdev lets messages flow freely between AI chats, across apps and devices. You can put the copying and pasting aside. One AI hands its work directly to another, and the line keeps moving on its own.
 
-Two Windows PCs connect over SSH and SFTP. Through the command line or a local Model Context Protocol (MCP) connection, an AI assistant can browse, edit and transfer files, run commands on the other PC in Windows or WSL, and start background jobs, check their logs and retrieve the results. If the other client keeps readable transcripts or can export a chat, the assistant taking over can consult the original conversation with permission. It can check what was decided and why, making the handoff more reliable.
+For cross-device work, Windows PCs connect over SSH and SFTP. Through the command line or a local Model Context Protocol (MCP) connection, an AI assistant can browse, edit and transfer files, run commands on the other PC in Windows or WSL, and start background jobs, check their logs and retrieve the results. If the other client keeps readable transcripts or can export a chat, the assistant taking over can consult the original conversation with permission. It can check what was decided and why, making the handoff more reliable.
 
 That gives you time to step back, look at what you’ve made and decide where to take it next.
 
 ## Getting started
 
-On the repository’s **Releases** page, download the **Windows Pair 1.0.3** installer archive, `xdev-windows-pair-1.0.3-docs.5.zip`, and its matching `.sha256` checksum file. Use the same archive on both PCs.
-
-### Choose one installation method
+Choose one installation method.
 
 | Install it yourself | Have an AI install it |
 | --- | --- |
-| Follow the guide to name your devices, install xdev and pair the PCs. [Installation and user guide](product/README.en.md) | Give an AI assistant with local access the archive, checksum file and deployment guide. The assistant installs xdev, pairs the PCs and verifies the setup. [AI deployment guide](product/AI-DEPLOY.en.md) |
+| Download the Windows Pair ZIP and its matching `.sha256` file from the [latest release](https://github.com/realhdx/xdev/releases/latest). Follow the [installation guide](product/README.en.md). For multiple devices, use the same ZIP on each. | Paste the prompt below into an AI chat that can operate your PCs. The assistant downloads the package, installs xdev and verifies the setup. [AI deployment guide](product/AI-DEPLOY.en.md) |
+
+```text
+Get the latest release of xdev from https://github.com/realhdx/xdev and follow the included AI deployment guide to install and verify it on the Windows devices I specify.
+```
 
 For builds and tests, see the [build guide](BUILDING.en.md). For versions and upgrade notes, see the [changelog](product/CHANGELOG.en.md).
 

@@ -2,6 +2,10 @@
 
 [简体中文](CHANGELOG.md) · **English**
 
+## Windows Pair 1.0.3 · Documentation revision 6 · 2026-11-20
+
+The project overview and installation guides now give each installation path its own starting point. Download the release for a manual installation, or give an AI one prompt to fetch, install and verify xdev on the selected devices. One PC can run independently. Additional devices use the same package and need pairing only for cross-device work.
+
 ## Windows Pair 1.0.3 · Documentation revision 5 · 2026-11-20
 
 The project overview, installation and user manual, AI deployment guide, build guide and release documentation now have Chinese and English editions. The same ZIP supports both installation paths. The project overview also lists the clients tested in real chats and how each handoff worked. Existing 1.0.3 installations can use the new guides immediately.

@@ -2,16 +2,18 @@
 
 [English](README.en.md) | **简体中文**
 
-把一份文件发到另一台 Windows，在那里运行程序，再让指定的 AI 聊天把处理结果寄回。xdev 将这些操作放在同一套命令行和 MCP 工具中。两台电脑都可以发起操作，同一设备上的多个聊天分别寻址。
+xdev 让指定的 AI 聊天彼此寄信、沿原信回复，也能通过同一套 CLI 和 MCP 工具操作文件、运行任务。聊天可以在同一台 Windows 设备上，也可以位于已配对的不同设备上。
 
-本手册对应 `windows-pair` 1.0.3，资料修订 5。已安装 1.0.3 的用户可直接使用本手册。[版本说明](CHANGELOG.md)
+本手册对应 `windows-pair` 1.0.3，资料修订 6。已安装 1.0.3 的用户可直接使用本手册。[版本说明](CHANGELOG.md)
 
 ## 安装方式，二选一
 
-先准备同一发行版本的 ZIP 和对应的 `.zip.sha256` 校验文件，然后选择一种安装方式。
+- **[手动安装](#安装与配对)**。下载同一发行的安装包和校验文件，在所选 Windows 设备上安装。需要跨设备互通时再配置 SSH。
+- **[交给 AI 安装](AI-DEPLOY.md)**。把下面一句话发给能操作目标电脑的助手，它会自行下载安装包。
 
-- **[手动安装](#安装与配对)**。按步骤在两台 Windows 上各安装一次。只想先在本机试用，可以跳过 SSH 配对。
-- **[交给 AI 安装](AI-DEPLOY.md)**。把这两个文件和 AI 部署手册交给能操作目标电脑的助手，由它完成安装和验证。
+```text
+请从 https://github.com/realhdx/xdev 获取最新正式版，按包内 AI 部署指南在我指定的 Windows 设备上安装并验证 xdev。
+```
 
 ## 运行条件
 
@@ -26,13 +28,13 @@ xdev 团队编写的软件及脚本采用 MPL-2.0。安装包根目录的 `LICEN
 
 ## 安装与配对
 
-### 1. 选好名称并验证 SSH
+### 1. 选择设备名称，按需配对
 
 运行 `hostname` 查看 Windows 计算机名。xdev 默认采用该名称，也可用 `--name` 自行命名，用 `--alias` 增加别名。本机可写为 `local`。**设备主名是 xdev 中显示的地址，SSH 别名负责找到对端的账户与网络地址。** 例如，可以把设备称为「实验室」，在本机 SSH 配置中用 `lab-ssh` 连接它。
 
-在两端的 `~/.ssh/config` 分别为对机设置 `Host`、`HostName` 和 `User`，配置对该账户的公钥登录。首次连接时，将显示的主机密钥指纹与对方提供的指纹核对。Windows 提供 OpenSSH 可选功能，启用服务和配置用户密钥可按微软指南操作。[安装 OpenSSH](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse) · [配置密钥认证](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement)
+**仅在需要跨设备互通时配置 SSH。** 在发起端的 `~/.ssh/config` 分别为对机设置 `Host`、`HostName` 和 `User`，配置对该账户的公钥登录。首次连接时，将显示的主机密钥指纹与对方提供的指纹核对。Windows 提供 OpenSSH 可选功能，启用服务和配置用户密钥可按微软指南操作。[安装 OpenSSH](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse) · [配置密钥认证](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement)
 
-在**每台**电脑的目标用户 PowerShell 中测试对端。将 `lab-ssh` 换成相应的 SSH 别名。第一条应返回对机的 Python 3.14.x，第二条应显示 SFTP 的远端工作目录，两条都应能免交互执行。
+在发起端的目标用户 PowerShell 中测试对端。如需双向操作，交换方向再测一次。将 `lab-ssh` 换成相应的 SSH 别名。第一条应返回对机的 Python 3.14.x，第二条应显示 SFTP 的远端工作目录，两条都应能免交互执行。
 
 ```powershell
 ssh -o BatchMode=yes -o StrictHostKeyChecking=yes lab-ssh "python --version"
@@ -41,10 +43,10 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes lab-ssh "python --version"
 
 ### 2. 校验并解压
 
-从同一发行版本下载 `xdev-windows-pair-1.0.3-docs.5.zip` 和同名 `.zip.sha256` 校验文件。在每台电脑的下载目录运行下面的 PowerShell。若没有 `py` 启动器，以 `& '解释器的完整路径'` 替换示例中的 `py -3.14`。
+从同一发行版本下载 `xdev-windows-pair-1.0.3-docs.6.zip` 和同名 `.zip.sha256` 校验文件。部署多台时使用同一份包。在每台目标电脑的下载目录运行下面的 PowerShell。若没有 `py` 启动器，以 `& '解释器的完整路径'` 替换示例中的 `py -3.14`。
 
 ```powershell
-$zip = (Resolve-Path '.\xdev-windows-pair-1.0.3-docs.5.zip').Path
+$zip = (Resolve-Path '.\xdev-windows-pair-1.0.3-docs.6.zip').Path
 $expected = ((Get-Content -LiteralPath ($zip + '.sha256') -TotalCount 1) -split '\s+')[0]
 if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ine $expected) { throw '发布包校验失败' }
 $kit = Join-Path (Split-Path $zip) ([IO.Path]::GetFileNameWithoutExtension($zip))
@@ -57,7 +59,13 @@ if ($LASTEXITCODE -ne 0) { throw '包内文件校验失败' }
 
 ### 3. 在各自的用户账户中安装
 
-新装示例采用「书房」和「实验室」两个主名。将它们和 SSH 别名替换成你的设置。沿用 Windows 名时，省略本机的 `--name`，并在对机的 `--peer` 填写这个 Windows 名。
+**仅本机使用。** 在目标用户账户中运行以下命令，默认安装 CLI 和本地 MCP，目标设备可写为 `local`。仅需 CLI 时加 `--cli-only`。
+
+```powershell
+py -3.14 -I -B -X utf8 install.py install --expect-current none
+```
+
+**跨设备互通。** 下面以「书房」和「实验室」双向配对为例。将主名和 SSH 别名替换成你的设置。沿用 Windows 名时，省略本机的 `--name`，并在对机的 `--peer` 填写这个 Windows 名。
 
 ```powershell
 # 在书房机运行
@@ -66,20 +74,21 @@ py -3.14 -I -B -X utf8 install.py install --expect-current none --name 书房 --
 py -3.14 -I -B -X utf8 install.py install --expect-current none --name 实验室 --peer 书房 --peer-ssh study-ssh
 ```
 
-只在本机试用命令行时，可运行 `py -3.14 -I -B -X utf8 install.py install --expect-current none --cli-only`，目标设备使用 `local`。已有 xdev 的设备按「升级、回退与换机」操作。需要迁入旧信箱时，先恢复备份，再开始收信。
+已有 xdev 的设备按「升级、回退与换机」操作。需要迁入旧信箱时，先恢复备份，再开始收信。
 
-### 4. 核对两端
+### 4. 验证安装
 
-在两台电脑各运行一次，`$peer` 填对机主名。`--version` 应显示 `xdev 1.0.3 (windows-pair)`，两次 `who` 分别返回本机与对机的身份，`status` 返回 `active_verified: true`。日常使用稳定入口 `xdev.cmd`，解压目录留作升级和维护。
+在每台已安装设备上，`--version` 应显示 `xdev 1.0.3 (windows-pair)`，`who` 应返回本机身份，`status` 应返回 `active_verified: true`。日常使用稳定入口 `xdev.cmd`，解压目录留作维护。
 
 ```powershell
 $xdev = Join-Path $env:LOCALAPPDATA 'CrossDeviceCollab\xdev.cmd'
-$peer = '实验室'   # 在实验室机填写「书房」
+$peer = 'local'   # 以下示例默认使用本机
 & $xdev --version
 & $xdev who
-& $xdev who --host $peer
 py -3.14 -I -B -X utf8 install.py status
 ```
+
+需要验证已配置的 SSH 配对时，将 `$peer` 设为对机主名，运行 `& $xdev who --host $peer` 核对远端身份。如需双向互通，在对机反向验证。
 
 ## 文件和任务
 
@@ -146,5 +155,5 @@ $chat = '<目标聊天ID>'
 
 ## 升级、回退与换机
 
-- **升级或回退**。在解压目录运行 `py -3.14 -I -B -X utf8 install.py status` 记下 `active`。升级运行 `install.py upgrade --expect-current 当前摘要`，回退运行 `install.py rollback --expect-current 当前摘要`，都使用同一 Python 前缀。分别核对双机版本，重连相关客户端的 xdev 服务。回退还可用 `--version` 或 `--release` 选择本机已有版本。
-- **带信箱迁机**。先完成在途任务，暂停对旧信箱的写入。在旧机用 `py -3.14 -I -B -X utf8 migrate.py export --archive 'D:\备份\xdev-mail.zip'` 导出。新机登记原身份键及别名、重新配对 SSH，在**新装且尚未收信**的目标上，用 `migrate.py restore --archive 'D:\备份\xdev-mail.zip' --sha256 导出摘要` 恢复。文件附件、SSH 凭据、AI 账户和原聊天登记需分别处理。[迁移与兼容选项](AI-DEPLOY.md#迁移与兼容选项)
+- **升级或回退**。在解压目录运行 `py -3.14 -I -B -X utf8 install.py status` 记下 `active`。升级运行 `install.py upgrade --expect-current 当前摘要`，回退运行 `install.py rollback --expect-current 当前摘要`，都使用同一 Python 前缀。在各升级或回退的设备核对版本，重连相关客户端的 xdev 服务。回退还可用 `--version` 或 `--release` 选择本机已有版本。
+- **带信箱迁机**。先完成在途任务，暂停对旧信箱的写入。在旧机用 `py -3.14 -I -B -X utf8 migrate.py export --archive 'D:\备份\xdev-mail.zip'` 导出。新机登记原身份键及别名，按需重新配对 SSH，在**新装且尚未收信**的目标上，用 `migrate.py restore --archive 'D:\备份\xdev-mail.zip' --sha256 导出摘要` 恢复。文件附件、SSH 凭据、AI 账户和原聊天登记需分别处理。[迁移与兼容选项](AI-DEPLOY.md#迁移与兼容选项)

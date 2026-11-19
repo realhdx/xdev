@@ -2,16 +2,18 @@
 
 **English** | [简体中文](README.md)
 
-Send a file to a second Windows PC, run a program there, and have a specific AI chat send the result back. xdev provides the same operations through its command line and MCP tools. Either computer can initiate an operation. Each chat has its own address, even when several share a device.
+xdev lets AI chats send messages to one another and reply to the original sender. The same CLI and MCP tools also handle files and jobs. The chats can share a Windows device or run on different devices that have been paired.
 
-This guide covers `windows-pair` 1.0.3, documentation revision 5. It also applies to existing 1.0.3 installations. [Changelog](CHANGELOG.en.md)
+This guide covers `windows-pair` 1.0.3, documentation revision 6. It also applies to existing 1.0.3 installations. [Changelog](CHANGELOG.en.md)
 
 ## Choose one installation method
 
-Get the release ZIP and its matching `.zip.sha256` checksum file, then choose one of these methods.
+- **[Install manually](#installation-and-pairing).** Download the release ZIP and matching checksum, then install on your selected Windows devices. Configure SSH only for cross-device access.
+- **[Ask an AI assistant to install xdev](AI-DEPLOY.en.md).** Send the line below to an assistant with access to the target PCs. It will download the installer itself.
 
-- **[Install manually](#installation-and-pairing).** Follow the steps on each Windows PC. To try xdev on one computer first, skip SSH pairing.
-- **[Ask an AI assistant to install xdev](AI-DEPLOY.en.md).** Give the two files and the AI deployment guide to an assistant with access to the target computers. It will perform the installation and verification.
+```text
+Get the latest release of xdev from https://github.com/realhdx/xdev and follow the included AI deployment guide to install and verify it on the Windows devices I specify.
+```
 
 ## Requirements
 
@@ -26,13 +28,13 @@ The xdev team's software and scripts are licensed under MPL-2.0. The package roo
 
 ## Installation and pairing
 
-### 1. Choose device names and verify SSH
+### 1. Choose a device name and pair devices if needed
 
 Run `hostname` to see the Windows computer name. xdev uses it by default. Use `--name` to choose a different name or `--alias` to add an alias. Use `local` to address the current device. **The device's primary name is its xdev address. The SSH alias identifies the account and network address to connect to.** For example, you can name a device “Lab” in xdev and connect to it through `lab-ssh` in your local SSH configuration.
 
-On each PC, set `Host`, `HostName` and `User` for the other computer in `~/.ssh/config` and configure public-key login for that account. On the first connection, compare the displayed host-key fingerprint with the one obtained from the other PC. Windows offers OpenSSH as an optional feature. Microsoft documents how to enable the service and configure user keys. [Install OpenSSH](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse) · [Configure key authentication](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement)
+**Configure SSH only for cross-device access.** On the initiating PC, set `Host`, `HostName` and `User` for the other computer in `~/.ssh/config` and configure public-key login for that account. On the first connection, compare the displayed host-key fingerprint with the one obtained from the other PC. Windows offers OpenSSH as an optional feature. Microsoft documents how to enable the service and configure user keys. [Install OpenSSH](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse) · [Configure key authentication](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement)
 
-On **each PC**, run these tests in PowerShell under the account that will use xdev. Replace `lab-ssh` with the SSH alias for the other PC. The first command should report Python 3.14.x on the other PC. The second should display its SFTP working directory. Both should run without prompting.
+Run these tests on the initiating PC in PowerShell under the account that will use xdev. For two-way access, repeat in the other direction. Replace `lab-ssh` with the SSH alias for the other PC. The first command should report Python 3.14.x on the other PC. The second should display its SFTP working directory. Both should run without prompting.
 
 ```powershell
 ssh -o BatchMode=yes -o StrictHostKeyChecking=yes lab-ssh "python --version"
@@ -41,10 +43,10 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes lab-ssh "python --version"
 
 ### 2. Verify and extract the release
 
-Download `xdev-windows-pair-1.0.3-docs.5.zip` and its matching `.zip.sha256` checksum file from the same release. Run the following in PowerShell from the downloads directory on each PC. If the `py` launcher is unavailable, replace `py -3.14` with `& 'full path to the interpreter'`.
+Download `xdev-windows-pair-1.0.3-docs.6.zip` and its matching `.zip.sha256` checksum file from the same release. Use the same archive for all selected PCs. Run the following in PowerShell from the downloads directory on each target PC. If the `py` launcher is unavailable, replace `py -3.14` with `& 'full path to the interpreter'`.
 
 ```powershell
-$zip = (Resolve-Path '.\xdev-windows-pair-1.0.3-docs.5.zip').Path
+$zip = (Resolve-Path '.\xdev-windows-pair-1.0.3-docs.6.zip').Path
 $expected = ((Get-Content -LiteralPath ($zip + '.sha256') -TotalCount 1) -split '\s+')[0]
 if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ine $expected) { throw 'Release archive verification failed' }
 $kit = Join-Path (Split-Path $zip) ([IO.Path]::GetFileNameWithoutExtension($zip))
@@ -57,7 +59,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Package file verification failed' }
 
 ### 3. Install under each user's account
 
-This fresh install uses the primary names “Study” and “Lab”. Replace those names and SSH aliases with yours. To keep the Windows name, omit `--name` on that PC and use its Windows name as the value of `--peer` on the other PC.
+**Local use.** Run this command under the target user's account. The default installation includes the CLI and local MCP support. Use `local` as the target. Add `--cli-only` if you only need the CLI.
+
+```powershell
+py -3.14 -I -B -X utf8 install.py install --expect-current none
+```
+
+**Cross-device access.** This example pairs “Study” and “Lab” for two-way access. Replace the names and SSH aliases with yours. To keep the Windows name, omit `--name` on that PC and use its Windows name as the value of `--peer` on the other PC.
 
 ```powershell
 # Run on the study PC
@@ -66,20 +74,21 @@ py -3.14 -I -B -X utf8 install.py install --expect-current none --name Study --p
 py -3.14 -I -B -X utf8 install.py install --expect-current none --name Lab --peer Study --peer-ssh study-ssh
 ```
 
-For a local CLI trial, run `py -3.14 -I -B -X utf8 install.py install --expect-current none --cli-only` and select `local` as the target device. If xdev is already installed, follow [Upgrade, rollback and migration](#upgrade-rollback-and-migration). To bring over an existing mailbox, restore its backup before receiving messages.
+If xdev is already installed, follow [Upgrade, rollback and migration](#upgrade-rollback-and-migration). To bring over an existing mailbox, restore its backup before receiving messages.
 
-### 4. Verify both installations
+### 4. Verify the installation
 
-Run the following on each PC with `$peer` set to the other device's primary name. `--version` should report `xdev 1.0.3 (windows-pair)`, the two `who` calls should return the local and remote identities respectively, and `status` should report `active_verified: true`. Use the stable `xdev.cmd` entry point for daily work. Keep the extracted directory for upgrades and maintenance.
+On each installed device, `--version` should report `xdev 1.0.3 (windows-pair)`, `who` should return the local identity, and `status` should report `active_verified: true`. Use the stable `xdev.cmd` entry point for daily work. Keep the extracted directory for maintenance.
 
 ```powershell
 $xdev = Join-Path $env:LOCALAPPDATA 'CrossDeviceCollab\xdev.cmd'
-$peer = 'Lab'   # Use 'Study' on the lab PC
+$peer = 'local'   # The following examples use this PC by default
 & $xdev --version
 & $xdev who
-& $xdev who --host $peer
 py -3.14 -I -B -X utf8 install.py status
 ```
+
+To verify a configured SSH pairing, set `$peer` to the other device's primary name and run `& $xdev who --host $peer` to check its identity. For two-way access, verify the reverse direction from the other device.
 
 ## Files and jobs
 
@@ -146,5 +155,5 @@ Hosts that only support tool calls can wait for a reply within the sending call.
 
 ## Upgrade, rollback and migration
 
-- **Upgrade or roll back.** In the extracted directory, run `py -3.14 -I -B -X utf8 install.py status` and note `active`. Use `install.py upgrade --expect-current current-digest` to upgrade or `install.py rollback --expect-current current-digest` to roll back, using the same Python command prefix for both. Verify the version on each PC and reconnect xdev in the affected clients. A rollback can also select a locally installed version with `--version` or `--release`.
-- **Move a mailbox to a new PC.** Finish in-flight jobs and pause writes to the old mailbox. On the old PC, export it with `py -3.14 -I -B -X utf8 migrate.py export --archive 'D:\Backup\xdev-mail.zip'`. On the new PC, register the original identity key and aliases and pair SSH again. On a **fresh installation that has not yet received mail**, restore the export with `migrate.py restore --archive 'D:\Backup\xdev-mail.zip' --sha256 export-sha256`. Handle file attachments, SSH credentials, AI accounts and existing chat registrations separately. [Migration and compatibility](AI-DEPLOY.en.md#migration-and-compatibility)
+- **Upgrade or roll back.** In the extracted directory, run `py -3.14 -I -B -X utf8 install.py status` and note `active`. Use `install.py upgrade --expect-current current-digest` to upgrade or `install.py rollback --expect-current current-digest` to roll back, using the same Python command prefix for both. Verify the version on each affected PC and reconnect xdev in the affected clients. A rollback can also select a locally installed version with `--version` or `--release`.
+- **Move a mailbox to a new PC.** Finish in-flight jobs and pause writes to the old mailbox. On the old PC, export it with `py -3.14 -I -B -X utf8 migrate.py export --archive 'D:\Backup\xdev-mail.zip'`. On the new PC, register the original identity key and aliases and pair SSH again if needed. On a **fresh installation that has not yet received mail**, restore the export with `migrate.py restore --archive 'D:\Backup\xdev-mail.zip' --sha256 export-sha256`. Handle file attachments, SSH credentials, AI accounts and existing chat registrations separately. [Migration and compatibility](AI-DEPLOY.en.md#migration-and-compatibility)

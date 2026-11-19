@@ -2,24 +2,28 @@
 
 [English](AI-DEPLOY.en.md) | **简体中文**
 
-适用于 xdev Windows Pair 1.0.3。部署者需要能在两台目标 Windows 的指定用户账户中运行 PowerShell。准备同一发行 ZIP 及对应的 SHA-256 校验文件；本次资料版本为 `xdev-windows-pair-1.0.3-docs.5.zip`。[手动安装与日常使用](README.md)
+适用于 xdev Windows Pair 1.0.3，资料修订 6。所选助手需要能在各目标 Windows 设备 的指定用户账户中运行 PowerShell。[手动安装与日常使用](README.md)
 
 ## 可直接交给助手的任务
 
-> 请在我选定的两台 Windows 上部署 xdev。默认用各自的 Windows 名作为地址，已有指定别名时保留。先核对双方私网 SSH 的连接方向、登录账户和主机指纹。根据机器现状选择新装或升级，只接入我选定的 AI 客户端。验证双向传文件和运行命令；如需会话通信，在两个指定聊天之间各发一次带主题的测试信，核对原聊天已读和关联回信。交付两机使用入口、已验证的功能和仍需处理的条件。
+```text
+请从 https://github.com/realhdx/xdev 获取最新正式版，按包内 AI 部署指南在我指定的 Windows 设备上安装并验证 xdev。
+```
 
 ## 安装或升级
 
-1. 在两台目标机分别读取 `hostname`、目标账户的 `%LOCALAPPDATA%` 及 64 位 CPython 3.14 路径。记录本机主名、对机主名、对机 SSH 别名。让每个发起账户独立向对端执行 `ssh -o BatchMode=yes -o StrictHostKeyChecking=yes 对端SSH别名 "python --version"`，并用批处理方式执行一次 SFTP 的 `pwd`。首次连接须事先核对主机指纹。两端的 Python 路径和当前用户目录分别在各自机器上解析。[配对与解压步骤](README.md#安装与配对)
-2. 在包外计算整包 SHA-256，与已核对的发行值比对，再将 ZIP 解压到新目录。以下 `install.py`、`migrate.py` 和 `verify.py` 命令均在解压根用 `py -3.14 -I -B -X utf8` 运行。先运行 `verify.py .`，成功后运行 `install.py status` 读取当前状态。
-3. **新装**运行 `install.py install --expect-current none --peer 对机主名 --peer-ssh 对机SSH别名`，自定义本机主名时增加 `--name 本机主名`。在另一机交换方向。**升级**使用 `install.py upgrade --expect-current 当前运行时摘要`，摘要取自该机自己的 `status`。默认安装通过包内离线依赖启用 MCP，只使用基础命令时可加 `--cli-only`。
-4. 两端分别调用 `%LOCALAPPDATA%\CrossDeviceCollab\xdev.cmd` 的 `--version`、`who`、`who --host 对机主名`。核对两个方向的 Windows 名、本机主名、对机身份键及 `install.py status` 的 `active_verified`。单机演练可在安装器子命令前指定 `--root 独立空目录`。
+1. **由助手取包。** 在[官方最新正式版](https://github.com/realhdx/xdev/releases/latest)的 Assets 中，下载该版本的 `xdev-windows-pair-*.zip` 和同名 `.zip.sha256` 文件。GitHub 自动生成的 `Source code` 归档不含完整安装包。已有同一发行的离线 ZIP 和校验文件时，可直接使用。
+2. 核对校验文件中的文件名，在解压前计算 ZIP 的 SHA-256 并比对。匹配后将同一份 ZIP 解压到各目标设备的新目录，按包内同版 `AI-DEPLOY.md` 继续。
+3. 在各目标设备上读取 `hostname`、目标账户的 `%LOCALAPPDATA%` 及 64 位 CPython 3.14 路径，仅本机使用时直接进入下一步。需要跨设备操作时，记录相应设备对的主名和 SSH 别名，先核对主机指纹，再从发起端运行 `ssh -o BatchMode=yes -o StrictHostKeyChecking=yes 对端SSH别名 "python --version"` 及批处理 SFTP 的 `pwd`。需要双向互通时再交换方向测试。[配对与解压步骤](README.md#安装与配对)
+4. 以下 `install.py`、`migrate.py` 和 `verify.py` 命令均在解压根用 `py -3.14 -I -B -X utf8` 运行。先运行 `verify.py .`，成功后运行 `install.py status` 读取当前状态。
+5. 默认使用 Windows 名并保留已有别名。已核实完整且运行时与本版一致时，沿用现有安装。**新装**运行 `install.py install --expect-current none`。单机无需 `--peer`，默认安装 CLI 和本地 MCP。仅需命令行时可加 `--cli-only`。自定义本机主名时加 `--name 本机主名`。需要配置跨机连接时加 `--peer 对机主名 --peer-ssh 对机SSH别名`。**升级**使用 `install.py upgrade --expect-current 当前运行时摘要`，摘要取自该机自己的 `status`。
+6. 每台已安装设备均用 `%LOCALAPPDATA%\CrossDeviceCollab\xdev.cmd` 检查 `--version` 和 `who`，核对 Windows 名、本机主名及 `install.py status` 的 `active_verified`。对需要互通的设备，再从发起端运行 `who --host 对机主名` 核对对机身份键。单机演练可在安装器子命令前指定 `--root 独立空目录`。
 
 日常命令以用户账户执行，例子中的 `$xdev` 由 `$xdev = Join-Path $env:LOCALAPPDATA 'CrossDeviceCollab\xdev.cmd'` 设置。
 
 ## 接入客户端
 
-**配置工具调用。** 在支持本地 stdio MCP 的应用中，登记[手册中的启动命令](README.md#接入-ai-工具)。部分客户端已有配置可由包内脚本增量更新。支持的配置标识为 `vscode`、`copilot`、`cursor`、`codebuddy`、`gemini`、`kimi-code`、`lmstudio`、`antigravity`、`dsh` 和 `workbuddy`。选择实际使用的配置文件，例如 VS Code 的编辑器设置和独立 Copilot 的设置分别登记。支持带注释配置的宿主可直接使用原生设置界面。
+**配置工具调用。** 只接入用户选定的客户端。在支持本地 stdio MCP 的应用中，登记[手册中的启动命令](README.md#接入-ai-工具)。部分客户端已有配置可由包内脚本增量更新。支持的配置标识为 `vscode`、`copilot`、`cursor`、`codebuddy`、`gemini`、`kimi-code`、`lmstudio`、`antigravity`、`dsh` 和 `workbuddy`。选择实际使用的配置文件，例如 VS Code 的编辑器设置和独立 Copilot 的设置分别登记。支持带注释配置的宿主可直接使用原生设置界面。
 
 以下以 VS Code 已有配置为例。首次检查会返回目标路径和当前 SHA-256。路径、用户配置和预期修改吻合时才执行 `apply`。保存本次返回的 `receipt_path`；若恢复返回冲突，先核对用户后续修改。
 
@@ -38,7 +42,8 @@ py -3.14 -B deploy/clients.py restore --receipt '<receipt_path>'
 
 | 项目 | 如何验证 |
 | --- | --- |
-| 双向传输与执行 | 在双方已有可写目录用唯一文件名传一份小文件，比较两端 SHA-256，然后交换方向。两端分别执行 `& $xdev exec --host 对机主名 -- hostname`，确认命令落在各自预期的设备。 |
+| 本机执行 | 运行 `& $xdev exec --host local -- hostname`，确认结果为本机 Windows 名。 |
+| 跨设备传输与执行（按需） | 从发起设备向对端已有可写目录传送一份带唯一文件名的小文件，比较两端 SHA-256。执行 `& $xdev exec --host 对机主名 -- hostname` 核对目标设备。需要双向互通时，再交换方向验证。 |
 | AI 工具加载 | 让每个选定客户端实际调用 `xdev_who`，记录设备及加载的运行时。遇到登录要求、额度限制或尚未启用的插件，记录达到的步骤。 |
 | 聊天收发 | 两个指定原聊天先分别执行 `msg whoami`。A 发带简短主题和唯一 `--id` 的测试信给 B；B 用 `msg read 原信ID` 读出仅在正文内的测试词，再 `msg reply 原信ID --text 答复`。A 按相同的 `reply_to` 读回，随后由 B 发起反向测试。 |
 | 忙时插话 | 若业务要求即时接纳，在目标原聊天忙时测试。记录设备入箱、队列或当前回合接纳、原聊天已读和关联回信。回复已结束的聊天并不能验证忙态行为。 |

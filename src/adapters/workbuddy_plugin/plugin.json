@@ -1,0 +1,6 @@
+{
+  "name": "xdev-session-receiver",
+  "version": "0.1.2",
+  "description": "Receive attributed xdev notices in the exact running WorkBuddy session, with native admission receipts.",
+  "hooks": "./hooks/hooks.json"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "xdev-session-receiver",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "files": [".codebuddy-plugin", "hooks"],
+  "codebuddy": {"plugin": true}
+}

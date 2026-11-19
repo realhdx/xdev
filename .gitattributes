@@ -1,0 +1,2 @@
+# Release verification uses the exact bytes of the source and lock files.
+* -text

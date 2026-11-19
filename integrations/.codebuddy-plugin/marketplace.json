@@ -1,0 +1,12 @@
+{
+  "name": "xdev-local",
+  "owner": {"name": "CrossDeviceCollab local integration"},
+  "plugins": [
+    {
+      "name": "xdev-session-receiver",
+      "description": "Deliver attributed xdev notices to the exact running WorkBuddy session with native admission receipts.",
+      "source": "./workbuddy",
+      "version": "0.1.2"
+    }
+  ]
+}

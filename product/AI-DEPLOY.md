@@ -2,12 +2,12 @@
 
 [English](AI-DEPLOY.en.md) | **简体中文**
 
-适用于 xdev Windows Pair 1.1.0-preview.13 预览版。所选助手需要能在各目标 Windows 设备的指定用户账户中运行 PowerShell。[手动安装与日常使用](README.md)
+适用于 xdev Windows Pair 1.1.0。所选助手需要能在各目标 Windows 设备的指定用户账户中运行 PowerShell。[手动安装与日常使用](README.md)
 
 ## 可直接交给助手的任务
 
 ```text
-请从 https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13-docs.1 下载 xdev 安装包和校验文件，按包内 AI 部署指南在我指定的 Windows 设备上安装并验证。
+请从 https://github.com/realhdx/xdev/releases/tag/v1.1.0 下载 xdev 安装包和校验文件，按包内 AI 部署指南在我指定的 Windows 设备上安装并验证。
 ```
 
 ## 安装或升级
@@ -16,7 +16,7 @@
 
 给跨设备的聊天配对时，先核实既有 SSH 路径是否可达、主机指纹是否匹配。需要仅直连时选 `direct`；如果用户选择中继暂存，按双方约定的保留期配置，并在每端为该对端设置 `encryption: "required"`。用两个指定聊天核对原信和关联回复。[跨网络会话通信指南](../design/session-relay.md) · [Amazon SQS 可选部署](../design/managed-queue.md)
 
-1. 取得本次预览提供的 ZIP 和同名校验文件。
+1. 取得本次发行提供的 ZIP 和同名校验文件。
 2. 核对校验文件中的文件名，在解压前计算 ZIP 的 SHA-256 并比对。匹配后将同一份 ZIP 解压到各目标设备的新目录，按包内同版 `AI-DEPLOY.md` 继续。
 3. 在各目标设备上读取 `hostname`、目标账户的 `%LOCALAPPDATA%` 及 64 位 CPython 3.14 路径，仅本机使用时直接进入下一步。需要跨设备传文件或执行命令时，记录相应设备对的主名和 SSH 别名，先核对主机指纹，再从发起端运行 `ssh -o BatchMode=yes -o StrictHostKeyChecking=yes 对端SSH别名 "python --version"` 及批处理 SFTP 的 `pwd`。需要双向互通时再交换方向测试。[配对与解压步骤](README.md#安装与配对)
 4. 以下 `install.py`、`migrate.py` 和 `verify.py` 命令均在解压根用 `py -3.14 -I -B -X utf8` 运行。先运行 `verify.py .`，成功后运行 `install.py status` 读取当前状态。
@@ -26,6 +26,8 @@
 日常命令以用户账户执行，例子中的 `$xdev` 由 `$xdev = Join-Path $env:LOCALAPPDATA 'CrossDeviceCollab\xdev.cmd'` 设置。
 
 ## 接入客户端
+
+先确定用户平常使用的是独立应用、编辑器插件还是 CLI。同一品牌的几个入口也可能分别加载工具。[客户端接入指南](CLIENTS.md)列出了各自的接入方式和在应用内验证的方法。
 
 **配置工具调用。** 只接入用户选定的客户端。在支持本地 stdio MCP 的应用中，登记[手册中的启动命令](README.md#接入-ai-工具)。部分客户端已有配置可由包内脚本增量更新。支持的配置标识为 `vscode`、`copilot`、`cursor`、`codebuddy`、`gemini`、`kimi-code`、`lmstudio`、`antigravity`、`dsh` 和 `workbuddy`。选择实际使用的配置文件，例如 VS Code 的编辑器设置和独立 Copilot 的设置分别登记。支持带注释配置的宿主可直接使用原生设置界面。
 
@@ -39,6 +41,8 @@ py -3.14 -B deploy/clients.py restore --receipt '<receipt_path>'
 ```
 
 重连目标客户端的 xdev 服务，在该客户端列出工具并调用 `xdev_who`，核对设备及 `_mcp_runtime.pinned_release` 与 `active_release`。若客户端显示服务已停止，先在服务列表中启动 xdev。`deploy/clients.py verify --product 标识` 可单独验证登记的启动命令，打开的聊天是否已采用该配置需要在宿主内另查。
+
+若 Copilot CLI 升级后仍只列出六项，可对 `copilot` 重新执行 `inspect` 和 `apply`。配置工具若无法确认旧清单来自原登记，会保留现有设置。需要窗口或网页功能时，可在该客户端的 xdev 工具列表中手动启用 `xdev_surface`。
 
 **按应用接入会话通信。** 每台设备配对一次，在使用的应用中接入 xdev。DeepSeek Harness 新装在安装命令加 `--with-dsh`。已有 xdev 时，先运行 `py -3.14 -B deploy/clients.py inspect --product dsh`，按返回摘要运行 `apply --product dsh --expect-sha256 '<摘要>'`。标准安装位置的常规升级会刷新已接入的 DSH。宿主按每封信的地址识别原根聊天，日常收发无需手工逐聊登记。Codex 的首次邮箱工具调用会自动登记，已有唯一可用宿主也能核对其他原聊天。OpenCode 使用原会话 ID。查看所用插件支持的即时或排队模式。[接收器列表](README.md#哪些客户端能接收原聊天通知)
 
@@ -78,7 +82,7 @@ xdev 维护设备配对、文件与任务操作、会话寻址、投递和回执
 
 ### 离线依赖
 
-xdev 自有源码采用 MPL-2.0，许可全文和推荐引用信息分别位于安装包根目录的 `LICENSE` 和 `CITATION.cff`。Windows Pair 1.1.0-preview.13 随附的 31 个上游 Python wheel 采用各自的许可。解开 `assets/optional-deps.zip` 可查看 `wheelhouse/`、逐文件 SHA-256 清单和 `requirements.lock.txt`。wheel 本身也是 ZIP，其中的 `*.dist-info/METADATA` 记录版本与发布信息，`*.dist-info/licenses/` 和个别源码目录保存上游许可及声明。
+xdev 自有源码采用 MPL-2.0，许可全文和推荐引用信息分别位于安装包根目录的 `LICENSE` 和 `CITATION.cff`。Windows Pair 1.1.0 随附的 31 个上游 Python wheel 采用各自的许可。解开 `assets/optional-deps.zip` 可查看 `wheelhouse/`、逐文件 SHA-256 清单和 `requirements.lock.txt`。wheel 本身也是 ZIP，其中的 `*.dist-info/METADATA` 记录版本与发布信息，`*.dist-info/licenses/` 和个别源码目录保存上游许可及声明。
 
 | 上游包声明的许可 | 包名和版本 |
 | --- | --- |

@@ -24,15 +24,15 @@ xdev 让消息在 AI 聊天之间自由往来，无论它们是否同机、是�
 请从 https://github.com/realhdx/xdev 获取最新正式版，按包内 AI 部署指南在我指定的 Windows 设备上安装并验证 xdev。
 ```
 
-从源码构建或运行测试见[构建指南](BUILDING.md)，核对版本和升级说明见[版本记录](product/CHANGELOG.md)。
+想知道自己的 AI 应用怎么接、接好后怎么试？见[客户端接入指南](product/CLIENTS.md)。从源码构建或运行测试见[构建指南](BUILDING.md)。
 
-### 1.1 预览版多接通了什么？
+### 1.1 新接通了什么？
 
 **信息也可以来自打开的网页和软件窗口。** 在已授权的浏览器标签中，AI 可以读取正文、填写表单、点击按钮并回读结果。在 Windows 应用中，它也能读取和操作软件提供的控件。一段网页原文、一条窗口提示，都可以连同来源和问题寄给指定聊天，对方沿原信接手。网页入口使用 OpenCode Browse 和已配对的扩展，Windows 窗口使用系统辅助功能。[网页与窗口手册](product/README.md#读取网页与应用窗口)
 
 **指定的聊天可以在另一个网络上。** Windows 和 Linux 消息端可以通过已配对的 SSH 连接直寄，或借助自己的 GitHub 私仓暂存端点加密的信件。支持的应用接入一次，就能按地址找到原聊天、随信带上回信地址；接入到信事件的宿主还可以在来信时唤醒空闲聊天。[跨网选路](design/session-relay.md) · [原聊天接入](design/host-discovery.md) · [云端接入](design/paired-folder-mail.md)
 
-**发信前，对方现在有空吗？** 新版预览可以查看指定聊天的状态，寄出后沿同一封信核对已读、处理进展和回信意向。任务变了，还可以撤回未读信或寄送更正稿。[当前预览版](https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13-docs.1) · [信件状态与留存](design/mail-lifecycle.md)
+**发信前，对方现在有空吗？** 可以查看指定聊天的状态，寄出后沿同一封信核对已读、处理进展和回信意向。任务变了，还可以撤回未读信或寄送更正稿。[1.1.0 更新说明](product/RELEASE-NOTES.md) · [信件状态与留存](design/mail-lifecycle.md)
 
 ## 安装后使用
 
@@ -63,7 +63,7 @@ $peer = '实验室'
 
 ## 参与改进
 
-xdev 的跨会话通信已在 Codex、Claude Desktop、DeepSeek Harness 和 OpenCode 中通过实测，支持向指定聊天发信，并沿原信收到答复。WorkBuddy 通过前台协助，Gemini 和豆包网页版通过浏览器转交，也完成了消息往返。
+xdev 的跨会话通信已在 Codex、受支持的 Claude Desktop 引擎、DeepSeek Harness 和 OpenCode 中通过实测，支持向指定聊天发信，并沿原信收到答复。WorkBuddy 通过前台协助，Gemini 和豆包网页版通过浏览器转交，也完成了消息往返。
 
 如果你在一款新的 AI 客户端里收到了第一封 xdev 来信，欢迎提一个 Pull Request，补上客户端版本、接入步骤和验证方法。如果消息停在了等待队列，可以开一个 Issue，告诉大家你希望它怎样抵达、实际又停在了哪一步。修改代码后可按[构建指南](BUILDING.md)运行测试。
 

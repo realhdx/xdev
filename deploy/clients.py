@@ -152,7 +152,7 @@ def publish_profile(path, before, after):
         stage.unlink(missing_ok=True)
 
 
-def transform(data, kind, entry, *, allow_new_section=False):
+def transform(data, kind, entry, *, allow_new_section=False, managed_entry=None):
     text = data.decode("utf-8-sig")
     newline = "\r\n" if "\r\n" in text else "\n"
     bom = b"\xef\xbb\xbf" if data.startswith(b"\xef\xbb\xbf") else b""
@@ -180,6 +180,11 @@ def transform(data, kind, entry, *, allow_new_section=False):
             if entry.get("tools") not in other_lists or not any(
                     servers["xdev"] == {**entry, "tools": catalog} for catalog in other_lists):
                 raise ValueError("An unlike xdev entry already exists; review before replacing")
+            if servers["xdev"] != managed_entry:
+                raise ValueError(
+                    "Existing Copilot tool selection preserved. The latest xdev receipt does not "
+                    "confirm this list. Edit xdev's tools in the Copilot MCP configuration to "
+                    "choose from this release's catalog: " + ", ".join(entry["tools"]))
             del old[section]["xdev"]
         servers["xdev"] = entry
         indent = "\t" if re.search(r"(?m)^\t+\"", text) else 2
@@ -249,7 +254,7 @@ def replace_cas(path, data, expected):
 def inspect(product, path, kind, root):
     data = client_bytes(product, path)
     entry = expected_entry(root, product)
-    updated, names, changed = registered_bytes(product, data, kind, entry)
+    updated, names, changed = registered_bytes(product, data, kind, entry, root, path)
     if product == "dsh":
         updated = original_dsh_profile(updated, root, prepare=False)
         return {"product": product, "path": str(path), "format": kind, "sha256": sha(data),
@@ -279,12 +284,35 @@ def original_dsh_profile(data, root, *, prepare, release=None):
     return dsh_roots.automatic_receiver(updated, root, dsh, prepare=prepare)
 
 
-def registered_bytes(product, data, kind, entry):
+def last_copilot_entry(root, path):
+    """Use only this profile's latest recorded selection. A missing history grants no tools."""
+    receipts = []
+    for source in (root / "state/client-rollouts").glob("*-copilot.json"):
+        try:
+            receipt = json.loads(source.read_bytes())
+            if receipt["schema"] != 1 or receipt["product"] != "copilot":
+                return None
+            if Path(receipt["path"]) == path:
+                stamp = datetime.fromisoformat(receipt["time_utc"])
+                if stamp.tzinfo is None or receipt["changed"] is not True:
+                    return None
+                receipts.append((stamp, receipt["xdev_entry"]))
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+    if not receipts:
+        return None
+    latest = max(stamp for stamp, _ in receipts)
+    entries = [entry for stamp, entry in receipts if stamp == latest]
+    return entries[0] if len(entries) == 1 else None
+
+
+def registered_bytes(product, data, kind, entry, root, path):
     # A newly opened Antigravity App may leave this user file at exactly zero bytes.
     # Keep the original bytes for conflict checks, the backup and exact restoration.
     if product == "antigravity" and data == b"":
         data = b'{"mcpServers": {}}'
-    return transform(data, kind, entry, allow_new_section=product in NEW_SECTION_CLIENTS)
+    managed = last_copilot_entry(root, path) if product == "copilot" else None
+    return transform(data, kind, entry, allow_new_section=product in NEW_SECTION_CLIENTS, managed_entry=managed)
 
 
 def apply(product, path, kind, root, expected):
@@ -293,7 +321,7 @@ def apply(product, path, kind, root, expected):
     if sha(data) != expected:
         raise ValueError("Client configuration differs from the reviewed SHA-256")
     entry = expected_entry(root, product)
-    updated, names, changed = registered_bytes(product, data, kind, entry)
+    updated, names, changed = registered_bytes(product, data, kind, entry, root, path)
     if product == "dsh":
         updated = original_dsh_profile(updated, root, prepare=True)
         changed = updated != data
@@ -350,7 +378,7 @@ def restore(receipt_path):
     return {"restored": True, "product": receipt["product"], "path": str(path), "sha256": sha(data)}
 
 
-async def verify(product, path, kind, root, peer):
+async def verify(product, path, kind, root, peer=None):
     before = inspect(product, path, kind, root)
     if not before["xdev_exact"]:
         raise ValueError("The actual client file does not contain the expected xdev registration")
@@ -374,7 +402,7 @@ async def verify(product, path, kind, root, peer):
                         raise ValueError("MCP catalog differs from the active xdev release")
                     report.update(protocol=initialization.protocolVersion, tools=names)
                     report["identities"] = []
-                    for host in ["local", peer]:
+                    for host in (["local", peer] if peer and peer != "local" else ["local"]):
                         reply = await session.call_tool("xdev_who", {"host": host})
                         value = reply.structuredContent or json.loads(reply.content[0].text)
                         if reply.isError or value.get("ok") is not True:
@@ -393,7 +421,7 @@ def main():
     parser.add_argument("--product", choices=PRODUCTS)
     parser.add_argument("--expect-sha256")
     parser.add_argument("--receipt", type=Path)
-    parser.add_argument("--peer", help="Registered xdev peer device name or alias")
+    parser.add_argument("--peer", help="Also verify a paired device by its registered name or alias")
     args = parser.parse_args()
     if args.action == "restore":
         if args.receipt is None:
@@ -411,8 +439,6 @@ def main():
                 parser.error("apply requires the reviewed --expect-sha256")
             result = apply(args.product, path, kind, root, args.expect_sha256)
         else:
-            if not args.peer:
-                parser.error("verify requires --peer")
             result = asyncio.run(verify(args.product, path, kind, root, args.peer))
     print(json.dumps(result, ensure_ascii=False))
 

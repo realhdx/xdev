@@ -27,6 +27,7 @@ SKILL_FILE = "integrations/skills/xdev-local/SKILL.md"
 PROJECT_NOTICES = {"LICENSE", "CITATION.cff"}
 ENGLISH_MANUALS = {"README.en.md", "AI-DEPLOY.en.md", "CHANGELOG.en.md"}
 RELEASE_NOTES = {"RELEASE-NOTES.md", "RELEASE-NOTES.en.md"}
+CLIENT_GUIDES = {"CLIENTS.md", "CLIENTS.en.md"}
 WORKBUDDY_SKILL = "integrations/workbuddy/skills/xdev-session-mail/SKILL.md"
 ISOLATED_BROWSER_EXAMPLE = {"examples/isolated-browser/README.md", "examples/isolated-browser/check.cjs"}
 RELAY_GUIDE = "design/session-relay.md"
@@ -64,6 +65,8 @@ def package_filenames(version, documentation_revision=0):
                      "deploy/paired-folder-service.ps1", "deploy/github-pr-notice.py", "deploy/mail-retention.py"})
     if since_network_preview(version, 14) or (since_network_preview(version, 13) and documentation_revision >= 1):
         files.update(RELEASE_NOTES | {WORKBUDDY_SKILL} | ISOLATED_BROWSER_EXAMPLE)
+    if components > (1, 1, 0) or (components == (1, 1, 0) and "-" not in version.partition("+")[0]):
+        files.update(CLIENT_GUIDES)
     return files
 
 

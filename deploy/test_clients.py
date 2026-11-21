@@ -1,11 +1,15 @@
 """Isolated registration/undo checks; no real client or MCP server is started."""
 
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import clients
 
@@ -129,22 +133,39 @@ class ClientRegistration(unittest.TestCase):
             self.assertEqual(original["tools"], list(clients.BASE_TOOLS))
             (root / "current.txt").write_text(digest + "\n" + "b" * 64 + "\n", encoding="ascii")
             self.assertEqual(clients.installed_tools(root), clients.BASE_TOOLS)
-            data = json.dumps({"mcpServers": {"xdev": original, "keep": {"command": "keep"}}}).encode()
-            config.write_bytes(data)
+            config.write_bytes(b'{"mcpServers":{"keep":{"command":"keep"}}}')
+            clients.apply("copilot", config, "json", root, clients.sha(config.read_bytes()))
+            data = config.read_bytes()
             identity.write_text(json.dumps({"product": "xdev", "version": "1.1.0-preview.1"}))
+            self.assertEqual(clients.installed_tools(root), clients.SURFACE_TOOLS)
+            identity.write_text(json.dumps({"product": "xdev", "version": "1.1.0"}))
             report = clients.inspect("copilot", config, "json", root)
             self.assertFalse(report["xdev_exact"])
-            self.assertEqual(report["server_names"], ["xdev", "keep"])
+            self.assertCountEqual(report["server_names"], ["xdev", "keep"])
             receipt = clients.apply("copilot", config, "json", root, report["sha256"])
             actual = json.loads(config.read_bytes())["mcpServers"]
             self.assertEqual(actual["xdev"]["tools"], [*original["tools"], "xdev_surface"])
             self.assertEqual(actual["keep"], {"command": "keep"})
             clients.restore(Path(receipt["receipt_path"]))
             self.assertEqual(config.read_bytes(), data)
-            original["tools"] = ["xdev_who"]
-            config.write_text(json.dumps({"mcpServers": {"xdev": original}}))
-            with self.assertRaisesRegex(ValueError, "unlike"):
-                clients.inspect("copilot", config, "json", root)
+            # The latest registration had seven tools. Restoring or deliberately
+            # selecting the earlier six must not silently re-enable surface access.
+            with self.assertRaisesRegex(ValueError, "selection preserved"):
+                clients.apply("copilot", config, "json", root, clients.sha(data))
+            self.assertEqual(config.read_bytes(), data)
+            # A different profile with an identical six-item selection is also user-owned.
+            another = root / "other.json"
+            another.write_bytes(data)
+            with self.assertRaisesRegex(ValueError, "selection preserved"):
+                clients.apply("copilot", another, "json", root, clients.sha(data))
+            self.assertEqual(another.read_bytes(), data)
+            for custom in ({"tools": ["xdev_who"]}, {"command": "custom"}, {"disabled": True}):
+                with self.subTest(custom=custom):
+                    manual = json.dumps({"mcpServers": {"xdev": {**original, **custom}}}).encode()
+                    config.write_bytes(manual)
+                    with self.assertRaisesRegex(ValueError, "unlike"):
+                        clients.apply("copilot", config, "json", root, clients.sha(manual))
+                    self.assertEqual(config.read_bytes(), manual)
 
     def test_config_roots_and_codebuddy_priority(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -160,6 +181,38 @@ class ClientRegistration(unittest.TestCase):
                 for path in (home / ".codebuddy.json", directory / "mcp.json", directory / ".mcp.json"):
                     path.write_text("{}")
                     self.assertEqual(clients.client_config("codebuddy")[0], path)
+
+    def test_verify_cli_checks_local_then_only_an_explicit_peer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "CrossDeviceCollab"
+            root.mkdir()
+            (root / "launch.py").touch()
+            config = Path(folder) / "settings.json"
+            config.write_text(json.dumps({"mcpServers": {"xdev": clients.expected_entry(root, "gemini")}}))
+            session = AsyncMock()
+            session.initialize.return_value = SimpleNamespace(protocolVersion="test")
+            session.list_tools.return_value = SimpleNamespace(tools=[SimpleNamespace(name=n) for n in clients.BASE_TOOLS])
+            session.call_tool.return_value = SimpleNamespace(isError=False, structuredContent={"ok": True})
+            sdk = MagicMock()
+            sdk.ClientSession.return_value.__aenter__.return_value = session
+            transport = MagicMock()
+            transport.stdio_client.return_value.__aenter__.return_value = (None, None)
+            with patch.dict(sys.modules, {"mcp": sdk, "mcp.client.stdio": transport}), patch.object(
+                    sys, "path", sys.path.copy()), patch.dict(os.environ, {"LOCALAPPDATA": folder}), patch.object(
+                    clients, "client_config", return_value=(config, "json")):
+                for extra, expected in (([], ["local"]), (["--peer", "review-pc"], ["local", "review-pc"])):
+                    with self.subTest(extra=extra), patch.object(
+                            sys, "argv", ["clients.py", "verify", "--product", "gemini", *extra]):
+                        stdout = io.StringIO()
+                        with redirect_stdout(stdout):
+                            clients.main()
+                        report = json.loads(stdout.getvalue())
+                        self.assertTrue(report["ok"])
+                        self.assertEqual(report["host_client_reload"], "not_requested_or_verified")
+                        self.assertEqual([row["requested"] for row in report["identities"]], expected)
+                        self.assertEqual([c.args for c in session.call_tool.await_args_list],
+                                         [("xdev_who", {"host": host}) for host in expected])
+                        session.call_tool.reset_mock()
 
     def test_json_roundtrip_restores_original_bytes(self):
         with tempfile.TemporaryDirectory() as directory:

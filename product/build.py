@@ -28,14 +28,14 @@ def source_module(name, filename):
 verify = source_module("xdev_product_verify", SOURCE / "product/verify.py")
 deploy = source_module("xdev_release_deploy", SOURCE / "deploy/deploy.py")
 optional = source_module("xdev_release_optional", SOURCE / "deploy/optional.py")
+PRODUCT_DIRECTORY_INPUTS = verify.ROOT_FILES | verify.ENGLISH_MANUALS | verify.RELEASE_NOTES | verify.CLIENT_GUIDES
 
 
 def source_inputs(source, version, documentation_revision=0):
     package = verify.package_filenames(version, documentation_revision)
-    product_inputs = verify.ROOT_FILES | verify.ENGLISH_MANUALS | verify.RELEASE_NOTES
     paths = {}
     for name in package - {verify.RUNTIME, verify.DEPENDENCIES}:
-        directory = source / "product" if name in product_inputs else source
+        directory = source / "product" if name in PRODUCT_DIRECTORY_INPUTS else source
         paths[name] = directory / name
     for name, path in paths.items():
         relative = path.relative_to(source)

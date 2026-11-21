@@ -24,15 +24,15 @@ Choose one installation method.
 Get the latest release of xdev from https://github.com/realhdx/xdev and follow the included AI deployment guide to install and verify it on the Windows devices I specify.
 ```
 
-For builds and tests, see the [build guide](BUILDING.en.md). For versions and upgrade notes, see the [changelog](product/CHANGELOG.en.md).
+Looking for your app? Find its setup steps and a quick test in the [AI client guide](product/CLIENTS.en.md). For builds and tests, see the [build guide](BUILDING.en.md).
 
-### What does the 1.1 preview connect?
+### What’s new in 1.1?
 
 **Work can start from an open page or an application window.** In a browser tab you authorize, an AI can read the page, fill in a form, press a button and check the result. It can also read and operate the controls a Windows app exposes. A passage from a page or a notice in a window can travel with its source and a question to a particular chat, which can reply to the original letter. Browser tabs use OpenCode Browse and its paired extension. Windows apps use the operating system’s accessibility interface. [Working with pages and windows](product/README.en.md#read-web-pages-and-application-windows)
 
 **The chat you need can be on another network.** Windows and Linux messaging endpoints can exchange letters over a paired SSH connection or use a private GitHub repository to hold mail encrypted at the endpoints. Once connected, a supported app can find the original chat by address and include the sender’s return address. A host that handles incoming mail events can wake an idle chat. [Cross-network routes](design/session-relay.md) · [Connecting chat hosts](design/host-discovery.md) · [Connecting cloud chats](design/paired-folder-mail.md)
 
-**Is the other chat available?** The preview can check a particular chat before you send. Follow the same letter to see what was read, whether work has started and whether to expect a reply. If the task changes, recall an unread letter or send a linked correction. [Current preview](https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13-docs.1) · [Mail status and retention](design/mail-lifecycle.md)
+**Is the other chat available?** Check a particular chat’s availability before you send. Follow the same letter to see what was read, whether work has started and whether to expect a reply. If the task changes, recall an unread letter or send a linked correction. [1.1.0 release notes](product/RELEASE-NOTES.en.md) · [Mail status and retention](design/mail-lifecycle.md)
 
 ## Using xdev after installation
 
@@ -63,7 +63,7 @@ To look up what was said in a particular chat, use `xdev file read` to read a ra
 
 ## Contributing
 
-In tests with Codex, Claude Desktop, DeepSeek Harness and OpenCode, xdev delivered messages to specific chats and routed replies back to the sender, with each reply linked to the original message. We also tested round trips in WorkBuddy with help in the app, and in the Gemini and Doubao web apps through a browser relay.
+In tests with Codex, supported Claude Desktop engines, DeepSeek Harness and OpenCode, xdev delivered messages to specific chats and routed replies back to the sender, with each reply linked to the original message. We also tested round trips in WorkBuddy with help in the app, and in the Gemini and Doubao web apps through a browser relay.
 
 If you receive your first xdev letter in a new AI client, a pull request with the client version, setup steps and verification method will help others get connected. If a message gets stuck in a queue, open an issue and describe when you expected it to reach the chat and how far it actually got. After changing the code, follow the [build guide](BUILDING.en.md) to run the tests.
 

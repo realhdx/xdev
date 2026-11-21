@@ -223,31 +223,38 @@ class ProductPackageTests(unittest.TestCase):
         added = verify.runtime_filenames("1.1.0-preview.11") - verify.runtime_filenames("1.1.0-preview.10")
         self.assertEqual(added, {"src/adapters/mail_arrival.py", "src/adapters/mail_arrival_stdio.py"})
 
-    def test_preview_thirteen_docs_kit_links_resolve_without_the_source_checkout(self):
-        version = "1.1.0-preview.13"
-        earlier = verify.package_filenames(version)
-        current = verify.package_filenames(version, documentation_revision=1)
-        added = verify.RELEASE_NOTES | {verify.WORKBUDDY_SKILL} | verify.ISOLATED_BROWSER_EXAMPLE
-        self.assertEqual(current - earlier, added)
-        self.assertTrue(current <= verify.package_filenames("1.1.0-preview.14"))
+    def test_stable_client_guides_and_offline_links_preserve_earlier_package_layouts(self):
+        preview = "1.1.0-preview.13"
+        earlier = verify.package_filenames(preview)
+        edition = verify.package_filenames(preview, documentation_revision=1)
+        preview_additions = verify.RELEASE_NOTES | {verify.WORKBUDDY_SKILL} | verify.ISOLATED_BROWSER_EXAMPLE
+        self.assertEqual(edition - earlier, preview_additions)
+        self.assertEqual(edition, verify.package_filenames("1.1.0-preview.14"))
+        version = "1.1.0"
+        current = verify.package_filenames(version)
+        self.assertEqual(current - edition, {"CLIENTS.md", "CLIENTS.en.md"})
         for name in verify.runtime_filenames(version) - verify.runtime_filenames():
             path = self.source / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"fixture runtime\n")
         for name in current - {verify.RUNTIME, verify.DEPENDENCIES}:
-            directory = "product" if name in verify.ROOT_FILES | verify.ENGLISH_MANUALS | verify.RELEASE_NOTES else ""
+            directory = "product" if name in builder.PRODUCT_DIRECTORY_INPUTS else ""
             path = self.source / directory / name
             path.parent.mkdir(parents=True, exist_ok=True)
             if name.endswith(".md"):
                 shutil.copyfile(builder.SOURCE / directory / name, path)
             elif not path.exists():
                 path.write_bytes(b"fixture\n")
-        self.select_version(version)
+        self.select_version(preview)
         self.assertEqual(verify.verify_archive(self.build()["archive"]), self.release)
         self.release["documentation_revision"] = 1
+        self.select_version(preview)
+        previous = self.build()
+        self.assertTrue(previous["archive"].endswith("-1.1.0-preview.13-docs.1.zip"))
+        self.assertEqual(verify.verify_archive(previous["archive"]), self.release)
+        del self.release["documentation_revision"]
         self.select_version(version)
         result = self.build()
-        self.assertTrue(result["archive"].endswith("-1.1.0-preview.13-docs.1.zip"))
         unpacked = self.work / "unpacked"
         with zipfile.ZipFile(result["archive"]) as archive:
             archive.extractall(unpacked)
@@ -261,7 +268,7 @@ class ProductPackageTests(unittest.TestCase):
                 if filename and not re.match(r"[a-z]+:", filename):
                     local = (manual.parent / filename).resolve()
                     self.assertTrue(local.is_relative_to(unpacked) and local.is_file(), (name, target))
-        for name in added:
+        for name in preview_additions | verify.CLIENT_GUIDES:
             path = unpacked / name
             blob = path.read_bytes()
             path.unlink()

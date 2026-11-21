@@ -2,6 +2,12 @@
 
 **简体中文** · [English](CHANGELOG.en.md)
 
+## Windows Pair 1.1.0 · 2026-11-22
+
+首个 1.1 正式版。新增网页及 Windows 窗口读取与操作、跨网原聊天通信、逐收件人进展，以及信件撤回与归档。[本版更新](RELEASE-NOTES.md)
+
+客户端配置检查可单机执行，需要同时检验配对设备时再加 `--peer`。Copilot CLI 升级时，配置工具会核对原登记回执，保留用户调整过的工具清单。安装包新增可离线阅读的[客户端接入与验证指南](CLIENTS.md)。
+
 ## Windows Pair 1.1.0-preview.13 · 资料修订 1 · 2026-11-22
 
 解压即可离线阅读[本版功能总览](RELEASE-NOTES.md)，从网页和 Windows 窗口的读取与操作，查到跨网投递、原聊天唤醒、并行收发及归档指南。另附 WorkBuddy 插件的会话收信指引及可选的[独立浏览器试验](../examples/isolated-browser/README.md)。运行时与离线依赖沿用 preview.13；已安装该版的用户可直接使用新资料。

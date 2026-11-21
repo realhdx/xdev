@@ -2,6 +2,12 @@
 
 [简体中文](CHANGELOG.md) · **English**
 
+## Windows Pair 1.1.0 · 2026-11-22
+
+The first stable 1.1 release adds web and Windows controls, delivery to existing chats across networks, per-recipient progress, recall and archiving. [Release notes](RELEASE-NOTES.en.md)
+
+Client configuration checks now run locally by default. Pass `--peer` to check a paired device as well. The Copilot CLI configuration helper checks the registration receipt before updating the tool list and preserves user changes. The kit includes an offline [AI client setup and verification guide](CLIENTS.en.md).
+
 ## Windows Pair 1.1.0-preview.13 · Documentation revision 1 · 2026-11-22
 
 Open the [release overview](RELEASE-NOTES.en.md) offline after extracting the ZIP. It links to guides for working with pages and Windows controls, delivering mail across networks, waking an original chat, following concurrent exchanges and archiving mail. The kit also includes the WorkBuddy plugin’s chat-mail instructions and an optional [isolated browser experiment](../examples/isolated-browser/README.md). It uses the same runtime and offline dependencies as preview.13. Existing installations can use the new guides immediately.

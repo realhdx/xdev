@@ -2,12 +2,12 @@
 
 **English** | [简体中文](AI-DEPLOY.md)
 
-This guide covers xdev Windows Pair 1.1.0-preview.13. Choose an assistant that can run PowerShell under the designated user account on each target Windows PC. [Manual installation and everyday use](README.en.md)
+This guide covers xdev Windows Pair 1.1.0. Choose an assistant that can run PowerShell under the designated user account on each target Windows PC. [Manual installation and everyday use](README.en.md)
 
 ## A task to give your assistant
 
 ```text
-Download xdev and its checksum from https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13-docs.1, then follow the included AI deployment guide to install and test it on the Windows devices I specify.
+Download xdev and its checksum from https://github.com/realhdx/xdev/releases/tag/v1.1.0, then follow the included AI deployment guide to install and test it on the Windows devices I specify.
 ```
 
 ## Install or upgrade
@@ -16,7 +16,7 @@ For mail across networks, use the [private GitHub mailbox guide](../design/githu
 
 Check whether the paired SSH route is reachable and verify the host key. For direct-only mail, select `direct`. If the user chooses relay storage, configure the agreed retention period and set `encryption: "required"` for the peer on both endpoints. Verify the original letter and linked reply in the two selected chats. [Windows and Linux messaging guide](../design/session-relay.md) · [Optional Amazon SQS setup](../design/managed-queue.md)
 
-1. Use the supplied preview ZIP and its matching checksum file.
+1. Use the release ZIP and its matching checksum file.
 2. Check the filename in the checksum file and compare its SHA-256 with the digest of the ZIP before extracting. Once they match, extract the same ZIP to a new directory on each selected device and continue with the enclosed `AI-DEPLOY.en.md` for that release.
 3. On each target device, check `hostname`, the target account's `%LOCALAPPDATA%` and the path to 64-bit CPython 3.14. For local use, proceed to the next step. For remote files or commands, record the primary names and SSH alias for the relevant pair, verify the host-key fingerprint, then run `ssh -o BatchMode=yes -o StrictHostKeyChecking=yes peer-ssh-alias "python --version"` and the SFTP `pwd` command in batch mode from the initiating device. Repeat in the opposite direction only for two-way access. [Pairing and extraction](README.en.md#installation-and-pairing)
 4. Run all `install.py`, `migrate.py` and `verify.py` commands below from the extracted root using `py -3.14 -I -B -X utf8`. Run `verify.py .` first. If it succeeds, inspect the current state with `install.py status`.
@@ -26,6 +26,8 @@ Check whether the paired SSH route is reachable and verify the host key. For dir
 Run everyday commands under the user's account. The examples use `$xdev`, set with `$xdev = Join-Path $env:LOCALAPPDATA 'CrossDeviceCollab\xdev.cmd'`.
 
 ## Connect clients
+
+Identify the exact app first. Its desktop app, editor extension and CLI can have separate tool lists. The [AI client guide](CLIENTS.en.md) gives the setup route and a check to run inside each app.
 
 **Configure tool calls.** Connect only the clients the user selected. In an app that supports local stdio MCP, register the [launch command from the manual](README.en.md#connect-ai-tools). The bundled script can update existing configurations for `vscode`, `copilot`, `cursor`, `codebuddy`, `gemini`, `kimi-code`, `lmstudio`, `antigravity`, `dsh` and `workbuddy`. Select the settings file the client actually uses. For example, VS Code's editor settings and the standalone Copilot settings require separate registrations. Hosts that allow comments in their settings files can also be configured through their own settings interface.
 
@@ -39,6 +41,8 @@ py -3.14 -B deploy/clients.py restore --receipt '<receipt_path>'
 ```
 
 Reconnect the xdev server in the target client. List its tools and call `xdev_who` from that client. Check the device and compare `_mcp_runtime.pinned_release` with `active_release`. If the client shows that the server is stopped, start xdev in the server list. Run `deploy/clients.py verify --product product-id` to test the registered launch command independently. Verify inside the host that the open chat has loaded the configuration.
+
+If Copilot CLI still shows six tools after an upgrade, run `inspect` and `apply` for `copilot` again. If the helper cannot verify the origin of the old tool list, it leaves the settings in place. To use pages and windows, enable `xdev_surface` in that client’s xdev tool list.
 
 **Connect once per app.** Pair each device once and connect the apps you use. For a fresh DeepSeek Harness installation, add `--with-dsh` to the installer command. If xdev is already installed, run `py -3.14 -B deploy/clients.py inspect --product dsh`, then run `apply --product dsh --expect-sha256 '<digest>'` using the reported digest. A regular upgrade refreshes an existing DSH connection at the standard install location. The host resolves each letter’s original root chat by address. Routine conversations need no separate manual registration. Codex registers on the first mailbox tool call, and a single available registered host can verify other existing chats. OpenCode uses the original session ID. Check the plugin’s supported immediate or queued modes. [Chat receiver list](README.en.md#which-clients-can-notify-an-existing-chat)
 
@@ -78,7 +82,7 @@ xdev implements device pairing, file and job operations, chat addressing, messag
 
 ### Offline dependencies
 
-xdev's own source uses MPL-2.0. The package root includes the full license in `LICENSE` and the recommended citation in `CITATION.cff`. The 31 upstream Python wheels supplied with Windows Pair 1.1.0-preview.13 retain their respective licenses. Extract `assets/optional-deps.zip` to find `wheelhouse/`, the per-file SHA-256 manifest and `requirements.lock.txt`. Each wheel is also a ZIP. Inside, `*.dist-info/METADATA` records the version and release details. `*.dist-info/licenses/` and, for some packages, individual source directories contain upstream licenses and notices.
+xdev's own source uses MPL-2.0. The package root includes the full license in `LICENSE` and the recommended citation in `CITATION.cff`. The 31 upstream Python wheels supplied with Windows Pair 1.1.0 retain their respective licenses. Extract `assets/optional-deps.zip` to find `wheelhouse/`, the per-file SHA-256 manifest and `requirements.lock.txt`. Each wheel is also a ZIP. Inside, `*.dist-info/METADATA` records the version and release details. `*.dist-info/licenses/` and, for some packages, individual source directories contain upstream licenses and notices.
 
 | License declared upstream | Package and version |
 | --- | --- |

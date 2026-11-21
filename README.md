@@ -26,7 +26,11 @@ xdev 让消息在 AI 聊天之间自由往来，无论它们是否同机、是�
 
 从源码构建或运行测试见[构建指南](BUILDING.md)，核对版本和升级说明见[版本记录](product/CHANGELOG.md)。
 
-**预览功能**。Windows 和 Linux 端可以通过已配对的 SSH 连接直接寄信。需要跨网暂存时，两端可启用端到端加密，让自选中继只接触密文。第三方 AI 应用也可登记自己的会话地址。[跨网络会话通信指南](design/session-relay.md) · [托管短存队列](design/managed-queue.md)
+### 1.1 预览版多接通了什么？
+
+**信息也可以来自打开的网页和软件窗口。** 在已授权的浏览器标签中，AI 可以读取正文、填写表单、点击按钮并回读结果。在 Windows 应用中，它也能读取和操作软件提供的控件。一段网页原文、一条窗口提示，都可以连同来源和问题寄给指定聊天，对方沿原信接手。网页入口使用 OpenCode Browse 和已配对的扩展，Windows 窗口使用系统辅助功能。[网页与窗口手册](product/README.md#读取网页与应用窗口)
+
+**指定的聊天可以在另一个网络上。** Windows 和 Linux 消息端可以通过已配对的 SSH 连接直寄，或借助自己的 GitHub 私仓暂存端点加密的信件。支持的应用接入一次，就能按地址找到原聊天、随信带上回信地址；接入到信事件的宿主还可以在来信时唤醒空闲聊天。[跨网选路](design/session-relay.md) · [原聊天接入](design/host-discovery.md) · [云端接入](design/paired-folder-mail.md)
 
 **发信前，对方现在有空吗？** 新版预览可以查看指定聊天的状态，寄出后沿同一封信核对已读、处理进展和回信意向。任务变了，还可以撤回未读信或寄送更正稿。[当前预览版](https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13) · [信件状态与留存](design/mail-lifecycle.md)
 

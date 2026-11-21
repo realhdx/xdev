@@ -2,6 +2,10 @@
 
 [简体中文](RELEASE-NOTES.md) · **English**
 
+The 1.1 preview series extends the file, job and chat handoffs in 1.0.3 to authorized web pages and Windows application windows. Use `xdev surface` or `xdev_surface` to read a page or inspect a window’s controls, fill a field or press a button, then check the result. Send a passage or an on-screen notice with its source to the chat that needs it. Browser tabs use OpenCode Browse and its paired extension. Windows apps use the operating system’s accessibility interface. [Pages and windows](https://github.com/realhdx/xdev/blob/v1.1.0-preview.13/product/README.en.md#read-web-pages-and-application-windows)
+
+The preview also connects existing chats across networks. Unrelated chats can exchange mail at the same time. A group letter keeps a separate delivery record and reply chain for each recipient. [Version history](CHANGELOG.en.md) · [Concurrent conversations](../design/mail-lifecycle.md)
+
 Check a chat’s availability before sending, then follow the same letter through intake, admission, reading, work updates and reply intent. Recall unread mail, link revisions, limit temporary relay storage and archive completed work. The private GitHub carrier supports silent status checks and recall. The paired-folder adapter can notify an enrolled original chat. [Mail status and retention](../design/mail-lifecycle.md) · [Paired-folder setup](../design/paired-folder-mail.md)
 
 Host plugins can now wake an idle original chat on arrival. The host starts its own chat handling when it accepts the event. Other clients can continue checking their inbox.

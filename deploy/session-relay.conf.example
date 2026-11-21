@@ -1,0 +1,44 @@
+# Dedicated xdev mail broker. Substitute alpha and beta with the devices'
+# actual xdev identity keys. Supply the XDEV_* environment variables to
+# nats-server before running "nats-server -t -c session-relay.conf".
+listen: $XDEV_RELAY_LISTEN
+jetstream {
+  store_dir: $XDEV_RELAY_STORAGE
+}
+tls {
+  cert_file: $XDEV_RELAY_CERT
+  key_file: $XDEV_RELAY_TLS_KEY
+  handshake_first: true
+}
+authorization {
+  users: [
+    # Separate provisioning credential. Do not give this account to devices.
+    {user: provision, password: $XDEV_RELAY_ADMIN_PASSWORD}
+    {
+      user: alpha
+      password: $XDEV_RELAY_ALPHA_PASSWORD
+      permissions: {
+        publish: [
+          "xdev.session.v1.beta.alpha"
+          "$JS.API.CONSUMER.INFO.XDEV_SESSION_V1.xdev-alpha"
+          "$JS.API.CONSUMER.MSG.NEXT.XDEV_SESSION_V1.xdev-alpha"
+          "$JS.ACK.XDEV_SESSION_V1.xdev-alpha.>"
+        ]
+        subscribe: ["_INBOX.xdev.alpha.>"]
+      }
+    }
+    {
+      user: beta
+      password: $XDEV_RELAY_BETA_PASSWORD
+      permissions: {
+        publish: [
+          "xdev.session.v1.alpha.beta"
+          "$JS.API.CONSUMER.INFO.XDEV_SESSION_V1.xdev-beta"
+          "$JS.API.CONSUMER.MSG.NEXT.XDEV_SESSION_V1.xdev-beta"
+          "$JS.ACK.XDEV_SESSION_V1.xdev-beta.>"
+        ]
+        subscribe: ["_INBOX.xdev.beta.>"]
+      }
+    }
+  ]
+}

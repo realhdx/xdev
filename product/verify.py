@@ -26,12 +26,19 @@ LEGACY_PACKAGE_FILES = ROOT_FILES | DEPLOY_FILES | INTEGRATION_FILES | {RUNTIME,
 SKILL_FILE = "integrations/skills/xdev-local/SKILL.md"
 PROJECT_NOTICES = {"LICENSE", "CITATION.cff"}
 ENGLISH_MANUALS = {"README.en.md", "AI-DEPLOY.en.md", "CHANGELOG.en.md"}
+RELAY_GUIDE = "design/session-relay.md"
+RELAY_ACL = "deploy/session-relay.conf.example"
+MANAGED_QUEUE_GUIDE = "design/managed-queue.md"
+GITHUB_MAIL_GUIDE = "design/github-mail.md"
+MAIL_LISTENER_SETUP = "deploy/mail-listener.py"
+GITHUB_MAIL_SETUP = "deploy/github-mail.py"
+HOST_GUIDES = {"design/resident-host.md", "design/host-discovery.md"}
+CONTACT_GUIDES = {"design/mail-lifecycle.md", "design/mail-retention.md", "design/paired-folder-mail.md"}
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 def package_filenames(version, documentation_revision=0):
-    core = re.split(r"[-+]", version, maxsplit=1)[0]
-    components = tuple(map(int, core.split(".")))
+    components = version_components(version)
     if components < (1, 0, 2):
         return LEGACY_PACKAGE_FILES
     files = LEGACY_PACKAGE_FILES | {SKILL_FILE}
@@ -39,10 +46,38 @@ def package_filenames(version, documentation_revision=0):
         files |= PROJECT_NOTICES
     if (*components, documentation_revision) >= (1, 0, 3, 5):
         files |= ENGLISH_MANUALS
+    if since_network_preview(version, 3):
+        files.update({RELAY_GUIDE, RELAY_ACL})
+    if since_network_preview(version, 4):
+        files.add(MANAGED_QUEUE_GUIDE)
+    if since_network_preview(version, 6):
+        files.update(HOST_GUIDES)
+    if since_network_preview(version, 7):
+        files.update({GITHUB_MAIL_GUIDE, GITHUB_MAIL_SETUP})
+    if since_network_preview(version, 8):
+        files.add(MAIL_LISTENER_SETUP)
+    if since_network_preview(version, 12):
+        files.update(CONTACT_GUIDES | {"deploy/paired-folder-mail.py", "deploy/paired-folder-worker.py",
+                     "deploy/paired-folder-service.ps1", "deploy/github-pr-notice.py", "deploy/mail-retention.py"})
     return files
 
 
-def runtime_filenames():
+def version_components(version):
+    core = re.split(r"[-+]", version, maxsplit=1)[0]
+    return tuple(map(int, core.split(".")))
+
+
+def since_network_preview(version, number):
+    """The 1.1.0 preview introduced separately versioned runtime and package files."""
+    core = version_components(version)
+    if core != (1, 1, 0):
+        return core > (1, 1, 0)
+    _, _, prerelease = version.split("+", 1)[0].partition("-")
+    preview = re.fullmatch(r"preview\.(\d+)", prerelease)
+    return not prerelease or bool(preview and int(preview[1]) >= number)
+
+
+def runtime_filenames(version="1.0.0"):
     """The reviewed runtime tree; adding a deliverable requires an intentional release edit."""
     by_folder = {
         "src": ("product.json",),
@@ -56,7 +91,28 @@ def runtime_filenames():
                          "official_channel.py", "opencode.py", "sessions.py", "workbuddy.py"),
         "src/adapters/workbuddy_plugin": ("hooks.json", "package.json", "plugin.json", "receiver.js"),
     }
-    return {f"{directory}/{filename}" for directory, names in by_folder.items() for filename in names}
+    files = {f"{directory}/{filename}" for directory, names in by_folder.items() for filename in names}
+    if version_components(version) >= (1, 1, 0):
+        files.update({"src/runtime/surfaces.py", "src/adapters/surface_browser.py",
+                      "src/adapters/surface_windows.py", "src/adapters/surface_windows.ps1"})
+    if since_network_preview(version, 3):
+        files.update({"src/runtime/session_relay.py", "src/runtime/outbox.py", "src/adapters/portable.py"})
+    if since_network_preview(version, 4):
+        files.update({"src/runtime/ssh_mail.py", "src/runtime/managed_queue.py"})
+    if since_network_preview(version, 6):
+        files.update({"src/adapters/resident.py", "src/adapters/host_catalog.py", "src/adapters/mcp_catalog.py",
+                      "src/runtime/mail_routes.py"})
+    if since_network_preview(version, 7):
+        files.add("src/runtime/github_mail.py")
+    if since_network_preview(version, 10):
+        files.add("src/runtime/github_demand.py")
+    if since_network_preview(version, 11):
+        files.update({"src/adapters/mail_arrival.py", "src/adapters/mail_arrival_stdio.py"})
+    if since_network_preview(version, 12):
+        files.update({"src/cli/contact.py", "src/runtime/mail_control.py", "src/runtime/mail_control_ssh.py",
+                      "src/runtime/mail_lifecycle.py", "src/runtime/mail_retention.py", "src/runtime/mail_contact.py",
+                      "src/runtime/github_capacity.py"})
+    return files
 
 
 def file_digest(path):
@@ -125,9 +181,9 @@ def zip_sizes(archive, expected):
     return {entry.filename: entry.file_size for entry in entries}
 
 
-def verify_runtime(handle):
+def verify_runtime(handle, release):
     with zipfile.ZipFile(handle) as archive:
-        files = runtime_filenames()
+        files = runtime_filenames(release["version"])
         sizes = zip_sizes(archive, files | {"release-manifest.json"})
         check_files(archive.open, metadata(archive.open, "release-manifest.json"), files, sizes)
         return metadata(archive.open, "src/product.json")
@@ -144,7 +200,7 @@ def verify_payload(opener, sizes, release):
         while block := source.read(262144):
             buffer.write(block)
         buffer.seek(0)
-        identity = verify_runtime(buffer)
+        identity = verify_runtime(buffer, release)
     if identity != {k: release[k] for k in ("product", "series", "version")}:
         raise ValueError("The runtime product identity differs from release.json")
     return release

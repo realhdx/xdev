@@ -101,6 +101,15 @@ class ForwardThroughCli(unittest.TestCase):
         self.assertEqual(response["host"], names["laptop"])
         self.assertEqual(self.addressed(A, "已核查")[0]["reply_to"], "mixed")
 
+    def test_reply_intent_is_part_of_the_automatic_id(self):
+        self.ok(A, "send", *target(B), "--id", "first-letter", "--text", ORIGINAL)
+        arguments = ("reply", "first-letter", "--text", "Reviewed")
+        original = self.ok(B, *arguments)
+        notice = self.ok(B, *arguments, "--intent", "inform")
+        invite = self.ok(B, *arguments, "--intent", "invite")
+        self.assertEqual(len({original["id"], notice["id"], invite["id"]}), 3)
+        self.assertEqual(notice["id"], self.ok(B, *arguments, "--intent", "inform")["id"])
+
     def test_mixed_group_forward_keeps_copies_and_bytes_on_retry(self):
         names = self.enable_old_readers()
         self.ok(A, "send", *target(B), "--id", "mixed-source", "--text", ORIGINAL)
@@ -341,3 +350,32 @@ class ForwardThroughCli(unittest.TestCase):
         self.assertEqual(middle["sender_endpoint"], B)
         self.assertEqual(middle["letter_attachment"]["original"]["sender_endpoint"], A)
         self.assertEqual(middle["letter_attachment"]["original"]["text"], ORIGINAL)
+
+    def test_group_preserves_individual_preflight_and_locks_intent(self):
+        def inspect(root, author, receiver, route, **options):
+            state = "maintenance" if receiver["session"] == C["session"] else "busy"
+            return {"status": "observed", "host_state": "idle", "source": "local_host",
+                    "declaration": {"state": state, "reason": "a private line for the specific recipient"}}
+        args = ("send", *target(C), *also(D), "--id", "batch-with-intent", "--text", NOTE)
+        with patch("src.cli.contact.observe", side_effect=inspect):
+            first = self.ok(A, *args, "--intent", "invite")
+        receipts = {item["session"]: item for item in first["deliveries"]}
+        self.assertEqual(receipts[C["session"]]["preflight"]["declaration"], {"state": "maintenance"})
+        self.assertEqual(receipts[D["session"]]["preflight"]["declaration"], {"state": "busy"})
+        self.assertTrue(all(row["communication_intent"] == "invite" and
+                            row["intent_delivery"] == "recipient_copy_confirmed" for row in receipts.values()))
+        self.assertNotIn("a private line", str(first))
+        replay = self.ok(A, *args, "--intent", "invite")
+        self.assertTrue(all(item["previously_accepted"] for item in replay["deliveries"]))
+        self.assertFalse(self.call(A, *args, "--intent", "request_action")["ok"])
+        self.assertFalse(self.call(A, *args)["ok"])
+        self.assertEqual(self.admitted.call_count, 2)
+
+    def test_withdrawn_group_copy_cannot_redirect_an_answer_to_other_members(self):
+        first = self.ok(A, "send", *target(C), *also(D), "--id", "withdraw-one-copy", "--text", NOTE)
+        copies = {item["session"]: item["id"] for item in first["deliveries"]}
+        self.ok(A, "recall", copies[C["session"]])
+        denied = self.call(C, "reply", copies[C["session"]], "--audience", "all", "--text", "new answer")
+        self.assertFalse(denied["ok"])
+        self.assertEqual(self.admitted.call_count, 2)
+        self.assertEqual(self.ok(D, "read", copies[D["session"]])["message"]["text"], NOTE)

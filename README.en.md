@@ -26,6 +26,10 @@ Get the latest release of xdev from https://github.com/realhdx/xdev and follow t
 
 For builds and tests, see the [build guide](BUILDING.en.md). For versions and upgrade notes, see the [changelog](product/CHANGELOG.en.md).
 
+**In preview.** Windows and Linux endpoints can send mail directly over paired SSH connections. When mail needs to wait for a device on another network, both endpoints can require end-to-end encryption before sending through a relay of your choice. Third-party apps can register their own chat addresses. [Cross-network messaging guide](design/session-relay.md) · [Managed queue setup](design/managed-queue.md)
+
+**Is the other chat available?** The preview can check a particular chat before you send. Follow the same letter to see what was read, whether work has started and whether to expect a reply. If the task changes, recall an unread letter or send a linked correction. [Current preview](https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13) · [Mail status and retention](design/mail-lifecycle.md)
+
 ## Using xdev after installation
 
 ### Retrieve a result file

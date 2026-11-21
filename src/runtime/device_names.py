@@ -5,6 +5,24 @@ import re
 import socket
 import unicodedata
 
+REPORT_CARRIERS = ("relay", "sqs", "github")
+MAIL_ROUTES = ("direct", "ssh", *REPORT_CARRIERS)
+
+
+def github_mailbox_config(config):
+    """Read one mail profile; older releases only recognize the retired github_mail name."""
+    if "github_mailbox" in config and "github_mail" in config:
+        raise ValueError("Keep one GitHub mailbox configuration; remove the retired github_mail section")
+    key = "github_mailbox" if "github_mailbox" in config else "github_mail"
+    if key not in config:
+        return None
+    mailbox = config[key]
+    if not isinstance(mailbox, dict) or not isinstance(mailbox.get("peers"), dict):
+        raise ValueError("The GitHub mailbox must define its paired devices")
+    if mailbox.get("delivery_scope", "mailbox") != "mailbox":
+        raise ValueError("GitHub mail supports only delivery_scope 'mailbox'")
+    return mailbox
+
 
 class UnknownDeviceError(ValueError):
     """The selector is outside this installation's registered addresses."""
@@ -67,6 +85,9 @@ class DeviceDirectory:
         self.node = _name(node)
         self._selectors = {}
         self._routes = {self.node: None}
+        self._rpc_profiles = {}
+        self._mail_transports = {}
+        self._mail_routes = {}
         self._names = {self.node: []}
         self._identity = {}
         self._mail = {}
@@ -93,13 +114,32 @@ class DeviceDirectory:
                 raise ValueError(f"Invalid peer settings for {peer}")
             if _key(peer) in self._selectors:
                 raise ValueError(f"Device name is already registered: {peer}")
-            ssh = settings.get("ssh", peer)
-            if not valid_ssh(ssh):
+            mail_transport = settings.get("mail_transport", "auto")
+            if mail_transport not in ("auto", *MAIL_ROUTES):
+                raise ValueError(f"Unsupported mail transport for {peer}")
+            self._mail_transports[peer] = mail_transport
+            routes = settings.get("mail_routes")
+            if "mail_routes" in settings:
+                if (not isinstance(routes, list) or not routes or
+                        any(route not in MAIL_ROUTES for route in routes)
+                        or len(set(routes)) != len(routes)):
+                    raise ValueError(f"Specify an ordered list of distinct mail routes for {peer}")
+                self._mail_routes[peer] = tuple(routes)
+            ssh_optional = (mail_transport in REPORT_CARRIERS or
+                            (routes and not {"direct", "ssh"}.intersection(routes) and mail_transport == "auto"))
+            ssh = settings.get("ssh", None if ssh_optional else peer)
+            if not (ssh is None and ssh_optional) and not valid_ssh(ssh):
                 raise ValueError(f"Configure an ASCII SSH host or Host alias for {peer}")
             self._routes[peer] = ssh
+            profile = settings.get("rpc", "windows")
+            if profile not in ("windows", "linux-mailbox"):
+                raise ValueError(f"Unsupported SSH RPC profile for {peer}")
+            self._rpc_profiles[peer] = profile
             self._names[peer] = []
-            for alias in (peer, *_aliases(settings), ssh):
+            for alias in (peer, *_aliases(settings)):
                 self._bind(alias, peer)
+            if ssh:
+                self._bind(ssh, peer)
             self._set_identity(peer, settings)
         if self.legacy_clients:
             local_role = config["device"]
@@ -142,7 +182,20 @@ class DeviceDirectory:
         raise UnknownDeviceError(f"Unknown device address: {selector!r}. Use local, this device, or a configured peer.")
 
     def ssh_target(self, selector):
-        return self._routes[self.resolve(selector)]
+        peer = self.resolve(selector)
+        target = self._routes[peer]
+        if target is None and peer != self.node:
+            raise ValueError(f"No SSH route configured for {peer}")
+        return target
+
+    def mail_transport(self, selector):
+        return self._mail_transports.get(self.resolve(selector), "auto")
+
+    def mail_routes(self, selector):
+        return self._mail_routes.get(self.resolve(selector))
+
+    def rpc_profile(self, selector):
+        return self._rpc_profiles.get(self.resolve(selector))
 
     def names_for(self, selector):
         """Persistable addresses that denote this device, excluding the local shortcut."""

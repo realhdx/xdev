@@ -2,6 +2,7 @@
 
 import argparse
 import hashlib
+from functools import partial
 import json
 import os
 from pathlib import Path
@@ -9,8 +10,10 @@ import sys
 from uuid import uuid4
 
 from src.runtime import commands, transport
+from src.runtime.device_names import REPORT_CARRIERS
 from src.adapters import sessions
 from src.adapters.delivery_contract import select_delivery, acceptance
+from src.cli import contact
 
 
 def _request(root, service, action, payload):
@@ -28,6 +31,9 @@ def _request(root, service, action, payload):
         result = messages.handle(root, action, payload)
     elif service == "system" and action == "who":
         result = {**transport.directory(root).describe(), "home": str(root)}
+    elif service == "surface":
+        from src.runtime import surfaces
+        result = surfaces.handle(root, action, payload)
     elif service == "ai" and action == "notify":
         from src.adapters import sessions
         result = sessions.notify(root, payload)
@@ -36,13 +42,15 @@ def _request(root, service, action, payload):
     return {"ok": True, **result}
 
 
-def _call(root, host, service, action, payload, timeout=60):
+def _call(root, host, service, action, payload, timeout=60, *, direct=False):
     if host == "local" or transport.resolve(root, host) == transport.node(root):
         return _request(root, service, action, payload)
     if service == "msg":
         from src.runtime import messages
         payload = messages.mail_payload(root, payload)
     message = {"service": service, "action": action, "payload": payload, "expected_device": transport.resolve(root, host)}
+    if direct:
+        return transport.peer_request(host, message, timeout, root=root, direct=True)
     return transport.peer_request(host, message, timeout, root=root)
 
 
@@ -59,7 +67,7 @@ def _error(exc):
     return {"ok": False, "error_code": type(exc).__name__, "error_message": str(exc)}
 
 
-def _serve_one(root):
+def _serve_one(root, *, mailbox_sender=None):
     try:
         raw = sys.stdin.buffer.read(1_000_001)
         if len(raw) > 1_000_000:
@@ -67,11 +75,23 @@ def _serve_one(root):
         message = json.loads(raw.decode("utf-8"))
         if not isinstance(message, dict):
             raise ValueError("Expected a JSON object")
+        if mailbox_sender is not None:
+            from src.runtime import ssh_mail
+            return _emit(ssh_mail.receive(root, mailbox_sender, message))
         if "expected_device" in message and not transport.directory(root).same(message["expected_device"], transport.node(root)):
             raise ValueError("The selected SSH route reached a different xdev device; check pairing")
         service, action = message.get("service"), message.get("action")
+        if service == "surface":
+            from src.runtime import surfaces
+            payload = message.get("payload")
+            if not isinstance(payload, dict):
+                raise ValueError("Expected a surface request object")
+            return _emit(surfaces.handle(root, action, payload, remote=True))
         if service == "msg" and action in {"publish", "listen"}:
             raise ValueError("Broker setup and actions are local only")
+        if service == "msg" and action == "control":
+            from src.runtime import mail_control_ssh
+            return _emit(mail_control_ssh.receive(root, message.get("payload")))
         return _emit(_request(root, service, action, message.get("payload", {})))
     except (OSError, ValueError, RuntimeError) as exc:
         return _emit(_error(exc))
@@ -89,11 +109,13 @@ def _command(parser):
 
 
 def _parser(parser_class=argparse.ArgumentParser):
-    parser = parser_class(prog="xdev", description="Operate your two Windows devices")
+    parser = parser_class(prog="xdev", description="Exchange messages between named AI sessions and operate paired devices")
     product = json.loads((Path(__file__).resolve().parents[1] / "product.json").read_text(encoding="utf-8"))
     parser.add_argument("--version", action="version",
                         version=f"{product['product']} {product['version']} ({product['series']})")
     sub = parser.add_subparsers(dest="service", required=True)
+    from src.runtime import surfaces
+    surfaces.add_parser(sub)
     sub.add_parser("file", help="Remote file operations. See xdev file --help")
     sub.add_parser("mcp", help="Run the optional local MCP stdio adapter")
     who = sub.add_parser("who", help="Confirm the target device")
@@ -125,6 +147,8 @@ def _parser(parser_class=argparse.ArgumentParser):
     forward.add_argument("message_id")
     send.add_argument("--forward-of", help="Forward this received letter through the standard send action")
     for command in (send, forward):
+        command.add_argument("--intent", choices=contact.INTENTS,
+                             help="Describe whether this letter informs, invites, requests a reply or requests action")
         command.add_argument("--quote", help="On a forward, mark a verbatim excerpt of the original")
         command.add_argument("--excerpt-only", action="store_true", help="Include only the selected excerpt")
         command.add_argument("--to", help="Recipient device name or alias; optional for a routed --reply-to")
@@ -136,7 +160,7 @@ def _parser(parser_class=argparse.ArgumentParser):
         command.add_argument("--as-device", action="store_true", help="Send as a device program without a chat identity")
         command.add_argument("--reply-to")
         command.add_argument("--kind", choices=("message", "reply", "receipt"), default="message")
-        command.add_argument("--return-client", choices=sessions.ADAPTERS)
+        command.add_argument("--return-client", type=sessions.client_name)
         command.add_argument("--return-session", help="Callback chat to notify on substantive replies")
         command.add_argument("--return-host", help="Return device name or alias (default: this device)")
         command.add_argument("--return-codex-home", help="Absolute Codex home for the return chat")
@@ -146,8 +170,9 @@ def _parser(parser_class=argparse.ArgumentParser):
         command.add_argument("--one-way", action="store_true", help="Explicitly send an AI notice without a return chat")
         command.add_argument("--wait-reply", type=float, metavar="SECONDS",
                           help="On a first message, return the peer's substantive reply in this same call (0-120 seconds)")
-        command.add_argument("--transport", choices=("auto", "ssh", "nats"), default="auto")
-        command.add_argument("--client", choices=sessions.ADAPTERS,
+        command.add_argument("--delivery-report", action="store_true", help="Request a silent report of inbox delivery and host admission")
+        command.add_argument("--transport", choices=("auto", "direct", "ssh", "nats", *REPORT_CARRIERS), default="auto")
+        command.add_argument("--client", type=sessions.client_name,
                           help="Notify this AI client on the recipient device after inbox delivery; requires --session")
         command.add_argument("--session", help="Existing AI session ID on the recipient device; requires --client")
         command.add_argument("--codex-home", help="Existing absolute Codex home on the recipient device; only --client codex")
@@ -168,23 +193,33 @@ def _parser(parser_class=argparse.ArgumentParser):
     reply = actions.add_parser("reply", help="Reply to one message; its saved address supplies the destination")
     reply.add_argument("message_id")
     reply.add_argument("--text", required=True)
+    reply.add_argument("--intent", choices=contact.INTENTS)
     reply.add_argument("--subject", help="Change the topic of this reply")
     reply.add_argument("--id", help="Stable ID for this reply")
+    reply.add_argument("--delivery-report", action="store_true")
+    reply.add_argument("--transport", choices=("auto", "direct", "ssh", "nats", *REPORT_CARRIERS))
     reply.add_argument("--from-client")
     reply.add_argument("--from-session")
     reply.add_argument("--from-profile")
     reply.add_argument("--audience", choices=("callback", "sender", "original-author", "authors", "all"),
                        default="callback", help="Use the stored return address, sender, original author, both authors, or discussion")
+    status = actions.add_parser("status", help="Check the route and any delivery report for your outgoing message")
+    status.add_argument("id")
+    status.add_argument("--as-client")
+    status.add_argument("--as-session")
+    status.add_argument("--as-profile")
+    status.add_argument("--as-device", action="store_true", help="For a message sent by a device program")
+    contact.arguments(actions, status)
     actions.add_parser("whoami", help="Show the calling chat and how it was identified")
     bind = actions.add_parser("bind", help="CAS-add a callback to one existing local legacy message")
     bind.add_argument("id")
     bind.add_argument("--return-host", required=True)
-    bind.add_argument("--return-client", choices=sessions.ADAPTERS, required=True)
+    bind.add_argument("--return-client", type=sessions.client_name, required=True)
     bind.add_argument("--return-session", required=True)
     bind.add_argument("--return-codex-home")
     bind.add_argument("--return-claude-home")
     bind.add_argument("--return-queue", action="store_true")
-    bind.add_argument("--client", choices=sessions.ADAPTERS)
+    bind.add_argument("--client", type=sessions.client_name)
     bind.add_argument("--session")
     bind.add_argument("--codex-home")
     bind.add_argument("--claude-home")
@@ -204,7 +239,8 @@ def _parser(parser_class=argparse.ArgumentParser):
         p.add_argument("--to-client", help="Filter by recipient; use with --to-session")
         p.add_argument("--to-session")
         p.add_argument("--to-profile")
-        p.add_argument("--after", type=int, default=0)
+        p.add_argument("--after", "--after-seq", type=int,
+                       help="Resume after this inbox sequence; use the cursor from the previous result")
         p.add_argument("--from", dest="sender", help="Filter mail by the sender's registered device name or alias")
         p.add_argument("--reply-to")
         p.add_argument("--group-id", help="Only letters in this discussion")
@@ -216,17 +252,33 @@ def _parser(parser_class=argparse.ArgumentParser):
             p.add_argument("--timeout", type=float, default=30)
         else:
             p.add_argument("--limit", type=int, default=25)
-    listen = actions.add_parser("listen", help="Receive messages from the configured JetStream broker")
+            p.add_argument("--wait", dest="inbox_wait", type=float, metavar="SECONDS",
+                           help="Wait once (0–60s) for this local chat's mail summaries. Starts with unread mail; "
+                                "resume with --after-seq CURSOR. Excludes pure receipts. Limit 1–100.")
+    listen = actions.add_parser("listen", help="Receive mail from the selected relay or private queue")
     listen.add_argument("--timeout", type=float, default=30)
     listen.add_argument("--limit", type=int, default=25)
+    listen.add_argument("--transport", choices=("nats", *REPORT_CARRIERS), default="nats")
+    listen.add_argument("--follow", action="store_true", help="Keep receiving relay mail until interrupted; emit one JSON event at a time")
+    events = actions.add_parser("events", help="Read committed local mailbox arrival events without reading letters")
+    events.add_argument("--transport", choices=("github",), default="github")
+    events.add_argument("--after", type=int, default=0, help="Resume after next_after from the previous event listing")
+    events.add_argument("--limit", type=int, default=25)
+    subscriber = actions.add_parser("host-events", help="Stream new authenticated mail events to a local host plugin over its pipes")
+    subscriber.add_argument("--peer", required=True, help="Paired sender device")
+    subscriber.add_argument("--client", required=True, help="Local host application")
+    subscriber.add_argument("--session", required=True, help="Existing original chat owned by the host")
+    subscriber.add_argument("--profile", help="Local profile bound to that chat")
     ai = sub.add_parser("ai", help="Notify an existing local AI session about a received message")
-    ai.add_argument("--client", choices=sessions.ADAPTERS, default="opencode",
+    ai.add_argument("--client", type=sessions.client_name,
                     help="AI client (default: opencode); Codex uses its official queue without --resume")
     ai.add_argument("--session", help="Existing local client session ID; DSH also accepts its native session-UUID")
     ai.add_argument("--codex-home", help="Existing Codex home; defaults to XDEV_CODEX_HOME, CODEX_HOME or ~/.codex")
     ai.add_argument("--claude-home", help="Existing target Claude config home containing sessions/")
-    ai.add_argument("--capabilities", action="store_true", help="Show static adapter contracts without probing hosts or sending")
-    ai.add_argument("--register", action="store_true", help="Register this Codex executor's own native receiver; never a different chat")
+    ai_action = ai.add_mutually_exclusive_group()
+    ai_action.add_argument("--capabilities", action="store_true", help="Show static adapter contracts without probing hosts or sending")
+    ai_action.add_argument("--discover", action="store_true", help="Find existing local chat addresses without reading messages or starting a model")
+    ai_action.add_argument("--register", action="store_true", help="Register this Codex executor's own native receiver; never a different chat")
     delivery = ai.add_mutually_exclusive_group()
     delivery.add_argument("--steer", action="store_true", help="DSH/OpenCode: current-turn delivery at its next native step (default)")
     delivery.add_argument("--queue", action="store_true", help="Explicitly wait for the next turn")
@@ -314,7 +366,7 @@ def _return_endpoint(root, args, origin, actor=None):
         return None
     if explicit and (client is None or session is None):
         raise ValueError("Return routing requires --return-client and --return-session")
-    if not explicit and actor and actor["client"] in sessions.ADAPTERS:
+    if not explicit and actor and sessions.receiver_bound(root, actor["client"], actor["session"]):
         from src.adapters import caller_context
         client = caller_context.current().get("client") or args.from_client or actor["client"]
         session = actor["session"]
@@ -326,11 +378,52 @@ def _return_endpoint(root, args, origin, actor=None):
     endpoint = {"device": device, "client": client, "session": session}
     if not explicit and actor:
         endpoint.update({k: actor[k] for k in ("codex_home", "claude_home") if k in actor})
-    if args.return_queue or (not explicit and sessions.ADAPTERS[client].get("backend") == "official_mcp_channel"):
+    if args.return_queue or (not explicit and sessions.descriptor(client).get("backend") == "official_mcp_channel"):
         endpoint["delivery"] = "queue"
     endpoint.update({key: value for key, value in (
         ("codex_home", args.return_codex_home), ("claude_home", args.return_claude_home)) if value is not None})
     return messages.normalize_reply_endpoint(endpoint)
+
+
+def _return_readiness(root, endpoint):
+    """Describe what the sender knows about the callback without waking a model."""
+    if not endpoint:
+        return {"return_address_known": False, "bidirectional_ready": False, "return_session_status": "no_address"}
+    if endpoint.get("channel") == "tool_result":
+        return {"return_address_known": True, "bidirectional_ready": True, "return_session_status": "bounded_wait"}
+    result = {"return_address_known": True, "bidirectional_ready": None, "return_session_status": "address_only"}
+    if not transport.directory(root).same(endpoint["device"], transport.node(root)):
+        return result
+    client = endpoint["client"]
+    if client == "dsh":
+        from src.adapters import dsh
+        try:
+            binding = dsh.receiver_binding(root, endpoint["session"])
+        except (OSError, ValueError) as exc:
+            return {**result, "return_session_status": "binding_unverified", "return_diagnostic": str(exc)}
+        if binding.get("binding_state", "").startswith("host_checks_"):
+            return {**result, "return_session_status": "host_resolves_on_delivery"}
+        result["bidirectional_ready"] = None if binding["bound"] else False
+        result["return_session_status"] = "receiver_registered" if binding["bound"] else "requires_receiver_binding"
+        if not binding["bound"]:
+            result.update(return_error_code=binding["error_code"], return_next_action=binding["next_action"])
+    elif client not in sessions.ADAPTERS:
+        if sessions.receiver_bound(root, client, endpoint["session"]):
+            result["return_session_status"] = "host_resolves_on_delivery"
+        else:
+            result.update(bidirectional_ready=False, return_session_status="no_host_receiver")
+    return result
+
+
+def _relay_carrier(name):
+    if name == "github":
+        from src.runtime import github_mail
+        return github_mail
+    if name == "sqs":
+        from src.runtime import managed_queue
+        return managed_queue
+    from src.runtime import session_relay
+    return session_relay
 
 
 def _extensions_received(delivered, attachment, group, root=None):
@@ -422,6 +515,12 @@ def _send(root, args, *, attachment=None, group=None, linked_to=None):
     if target is None:
         raise ValueError("Provide --to or a --reply-to with a stored callback")
     target = transport.resolve(root, target)
+    if args.transport == "auto" and target != origin:
+        args.transport = transport.directory(root).mail_transport(target)
+    if args.reply_to and args.kind == "message" and (args.transport in ("auto", "direct", *REPORT_CARRIERS) or
+            transport.directory(root).rpc_profile(target) == "linux-mailbox"):
+        # The legacy send --reply-to form has already resolved a local source and callback.
+        args.kind = "reply"
     if return_endpoint:
         return_endpoint = {**return_endpoint, "device": transport.resolve(root, return_endpoint["device"])}
     idle_only = args.idle_only
@@ -442,7 +541,7 @@ def _send(root, args, *, attachment=None, group=None, linked_to=None):
                     "current_turn_accepted": False, "session_accepted": False,
                     "next_action": "This receiver has not advertised immediate admission. Bind a capable receiver, or explicitly request a supported queue mode."}
         if args.transport == "nats":
-            raise ValueError("AI notification requires confirmed target inbox delivery; use auto or ssh, not nats")
+            raise ValueError("For an addressed chat choose auto, direct, ssh, relay, sqs or github")
         if return_endpoint is None and not args.one_way:
             return {"ok": False, "status": "requires_return_binding", "error_code": "RETURN_ENDPOINT_REQUIRED",
                     "error_message": "This host did not identify the sender chat. Use --wait-reply SECONDS for a bounded exchange, supply --return-client and --return-session for native callbacks, or explicitly use --one-way.",
@@ -465,6 +564,10 @@ def _send(root, args, *, attachment=None, group=None, linked_to=None):
     subject = normalize_subject(args.subject) if args.subject is not None else inherited_subject or preview_subject(raw)
     envelope = {"id": args.id, "from": origin, "to": target, "text": raw, "subject": subject, "envelope_version": 2,
                 "sender_endpoint": author, "sender_identity_source": identity_source}
+    if args.intent is not None:
+        if args.kind == "receipt":
+            raise ValueError("A receipt cannot request work or a reply.")
+        envelope["communication_intent"] = args.intent
     if linked_to or args.reply_to:
         envelope["reply_to"] = linked_to or args.reply_to
     if args.kind != "message":
@@ -495,31 +598,79 @@ def _send(root, args, *, attachment=None, group=None, linked_to=None):
         envelope["group"] = group
     if attachment is not None or group is not None:
         if args.transport == "nats":
-            raise ValueError("Use auto or ssh to confirm receipt of the full forwarded letter or discussion")
+            raise ValueError("Use auto, direct, ssh, relay, sqs or github for a forwarded letter or discussion")
         frame = {"service": "msg", "action": "deliver", "payload": envelope}
         if len(json.dumps(frame, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > 1_000_000:
             raise ValueError("The complete letter exceeds the transport limit; send larger files separately")
     participants = {"sender_endpoint": author, "sender_identity_source": identity_source, "recipient_identity": destination,
-                    "subject": subject}
-    broker = transport.config(root).get("broker")
+                    "subject": subject, **_return_readiness(root, return_endpoint)}
+    notification = None
+    if notify:
+        notification = {"id": envelope["id"], "client": client, "session": session}
+        notification.update({k: v for k, v in (("codex_home", codex_home), ("claude_home", claude_home),
+                                               ("steer", steer), ("idle_only", idle_only),
+                                               ("force_queue", spec.get("force_queue_option") and args.queue)) if v})
+    from src.runtime import mail_routes, outbox
     tool_reply = route is not None and route["status"] == "tool_result"
-    if not notify and not tool_reply and attachment is None and group is None and (args.transport == "nats" or (args.transport == "auto" and broker and target != origin)):
-        try:
+    routes = mail_routes.candidates(root, target, args.transport, delivery_report=args.delivery_report,
+                                   legacy_mail=not (notify or tool_reply or attachment or group))
+    if args.delivery_report and (args.kind == "receipt" or not all(r in REPORT_CARRIERS for r in routes)):
+        raise ValueError("A delivery report requires a letter and a paired relay, sqs or github carrier")
+    relayed = any(r in REPORT_CARRIERS for r in routes)
+    if relayed and target == origin:
+        raise ValueError("Use the local route to address another chat on this device")
+    if target != origin:
+        auto_receipt = bool(author and destination and not args.one_way and args.kind != "receipt" and tuple(routes) == ("github",))
+        args.delivery_report = outbox.remember(root, envelope, delivery_report=args.delivery_report, automatic_report=auto_receipt)
+    from src.runtime import mail_contact
+    route_name = "local" if target == origin else routes[0]
+    preflight = contact.observe(root, author, destination, route_name)
+    mail_contact.before_send(root, envelope, args.intent)
+
+    def submit(carrier, *, lookup=False):
+        if carrier in REPORT_CARRIERS:
+            adapter = _relay_carrier(carrier)
+            operation = adapter.reconcile if lookup else adapter.publish
+            sent = operation(root, envelope, notification if author else None, delivery_report=args.delivery_report)
+            return {**sent, **participants, "host": target, "client": client, "session": session,
+                    "reply_endpoint": return_endpoint, "recipient_endpoint": recipient_endpoint,
+                    "delivery_report_requested": args.delivery_report,
+                    "requested_delivery_mode": requested_mode, "session_status": "unconfirmed" if notify and author else "not_requested"}
+        if carrier == "nats":
             result = _request(root, "msg", "publish", envelope)
-        except (OSError, RuntimeError) as exc:
-            result = _error(exc)
-        if result["ok"] or args.transport == "nats":
             return {**result, **participants, "id": envelope["id"], "transport": "nats", "host": target}
-    if not notify:
-        delivered = _call(root, target, "msg", "deliver", envelope)
+        call = partial(_call, direct=True) if carrier == "direct" else _call
+        channel = "local" if target == origin else "direct" if carrier == "direct" else "ssh"
+        return _send_to_inbox(root, target, call, channel, envelope, participants, notification, spec,
+                              requested_mode, steer, idle_only, return_endpoint, recipient_endpoint,
+                              attachment, group, tool_reply)
+
+    if target == origin:
+        result = submit(routes[0])
+    else:
+        result = mail_routes.send(root, target, envelope["id"], routes, submit, reconcile=partial(submit, lookup=True))
+    mail_contact.after_send(root, envelope["id"], result)
+    delivery = result.get("inbox_delivery", result)
+    received_intent = (delivery.get("message") or {}).get("communication_intent")
+    return {**result, "preflight": preflight, "communication_intent": args.intent,
+            "intent_delivery": "unspecified" if args.intent is None else
+                               "recipient_copy_confirmed" if received_intent == args.intent else "unverified"}
+
+
+def _send_to_inbox(root, target, call, channel, envelope, participants, notification, spec, requested_mode,
+                   steer, idle_only, return_endpoint, recipient_endpoint, attachment, group, tool_reply):
+    client, session = (notification["client"], notification["session"]) if notification else (None, None)
+    if notification is None:
+        delivered = call(root, target, "msg", "deliver", envelope)
         if not _extensions_received(delivered, attachment, group, root):
             return {**participants, "ok": False, "id": envelope["id"], "host": target,
                     "status": "copy_unverified", "inbox_status": "unknown", "session_accepted": False}
-        return {**delivered, **participants, "id": envelope["id"], "host": target,
+        inbox = delivered.get("status") if delivered.get("ok") and delivered.get("status") in {"received", "duplicate"} else "unknown"
+        return {**delivered, **participants, "id": envelope["id"], "host": target, "inbox_status": inbox,
                 **({"return_channel": "tool_result", "caller_read": "unverified"} if tool_reply else {}),
-                "transport": "local" if target == origin else "ssh"}
+                "transport": channel}
     try:
-        delivered = _call(root, target, "msg", "deliver", envelope)
+        delivered = call(root, target, "msg", "deliver", envelope)
     except ValueError as exc:
         delivered = _error(exc)
     except (OSError, RuntimeError) as exc:
@@ -528,10 +679,9 @@ def _send(root, args, *, attachment=None, group=None, linked_to=None):
         delivered = {"ok": False, "outcome": "unknown", "error_code": "LETTER_COPY_UNVERIFIED",
                      "error_message": "The destination did not confirm the complete letter. Inspect its original ID before retrying."}
     result = {"ok": False, **participants, "id": envelope["id"], "host": target,
-              "transport": "local" if target == origin else "ssh", "client": client,
+              "transport": channel, "client": client,
               "session": session, "inbox_delivery": delivered, "model_status": "unverified",
               "reply_endpoint": return_endpoint, "recipient_endpoint": recipient_endpoint,
-              "bidirectional_ready": return_endpoint is not None,
               "requested_delivery_mode": requested_mode,
               "delivery_mode": "idle_only" if idle_only else "steer" if steer else requested_mode}
     if not delivered.get("ok") or delivered.get("status") not in {"received", "duplicate"}:
@@ -542,19 +692,8 @@ def _send(root, args, *, attachment=None, group=None, linked_to=None):
                 "error_code": delivered.get("error_code", "INBOX_DELIVERY_UNVERIFIED"),
                 "error_message": delivered.get("error_message", "Target inbox delivery was not confirmed")}
     result["inbox_status"] = delivered["status"]
-    notification = {"id": envelope["id"], "client": client, "session": session}
-    if codex_home is not None:
-        notification["codex_home"] = codex_home
-    if claude_home is not None:
-        notification["claude_home"] = claude_home
-    if steer:
-        notification["steer"] = True
-    if idle_only:
-        notification["idle_only"] = True
-    if spec.get("force_queue_option") and args.queue:
-        notification["force_queue"] = True
     try:
-        admitted = _call(root, target, "ai", "notify", notification, 75)
+        admitted = call(root, target, "ai", "notify", notification, 75)
     except ValueError as exc:
         admitted = _error(exc)
     except (OSError, RuntimeError) as exc:
@@ -630,13 +769,17 @@ def _parse_and_run(root, argv, *, parser=None):
                 parts.append(audience)
             if args.subject is not None:
                 parts.append(args.subject)
+            if args.intent is not None:
+                parts.append({"communication_intent": args.intent})
             key = json.dumps(parts, sort_keys=True,
                              ensure_ascii=False, separators=(",", ":")).encode("utf-8")
             args.id = "reply-" + hashlib.sha256(key).hexdigest()
-        for field in ("id", "from_client", "from_session", "from_profile", "subject"):
+        for field in ("id", "from_client", "from_session", "from_profile", "subject", "transport", "intent"):
             value = getattr(args, field)
             if value is not None:
                 expanded.extend(["--" + field.replace("_", "-"), value])
+        if args.delivery_report:
+            expanded.append("--delivery-report")
         args = parser.parse_args(expanded)
         args.audience = audience
     if args.service == "msg" and args.action == "read":
@@ -644,12 +787,18 @@ def _parse_and_run(root, argv, *, parser=None):
     # CLI executors carry their own host context. Shared MCP servers must use
     # the per-call context established by xdev_msg instead of process env.
     from src.runtime.cli_result import collecting
-    if not collecting() and os.environ.get("CODEX_THREAD_ID"):
+    passive = getattr(args, "discover", False) or (args.service == "msg" and args.action in {"events", "host-events"})
+    if args.service != "surface" and not passive and not collecting() and os.environ.get("CODEX_THREAD_ID"):
         _register_caller(root)
     values = vars(args).copy()
     service = values.pop("service")
     host = values.pop("host", "local")
-    if service == "who":
+    if service == "surface":
+        from src.runtime import surfaces
+        action = values.pop("action")
+        result = _call(root, host, service, action, {k: v for k, v in values.items() if v is not None})
+        result = surfaces.guide(result, action, args.provider, host, values.get("target"))
+    elif service == "who":
         result = _call(root, host, "system", "who", {})
         if result.get("ok") and host != "local" and not transport.directory(root).same(host, result["device"]):
             raise ValueError("The peer reported a different device name; check both address mappings")
@@ -664,11 +813,39 @@ def _parse_and_run(root, argv, *, parser=None):
             _args(values)
         result = _call(root, host, service, action, values)
         result.setdefault("id", values["id"])
+    elif service == "msg" and args.action in contact.ACTIONS:
+        result = contact.handle(root, args)
+    elif service == "msg" and args.action == "events":
+        result = _relay_carrier(args.transport).events(root, after=args.after, limit=args.limit)
+    elif service == "msg" and args.action == "host-events":
+        if collecting() or sys.stdin is None or sys.stdout is None or sys.stdin.isatty() or sys.stdout.isatty():
+            raise ValueError("Start host-events from your local host plugin with private input and output pipes")
+        from src.adapters.mail_arrival_stdio import serve
+        serve(root, args.peer, args.client, args.session, sys.stdin, sys.stdout, profile=args.profile)
+        return 0
+    elif service == "msg" and args.action == "listen":
+        if args.follow and args.transport == "nats":
+            raise ValueError("--follow requires a relay, sqs or github listener")
+        if args.transport in REPORT_CARRIERS:
+            carrier = _relay_carrier(args.transport)
+            if args.follow:
+                if collecting():
+                    raise ValueError("Run the continuous listener from the device service or terminal")
+                try:
+                    carrier.follow(root, _emit, limit=args.limit, timeout=args.timeout)
+                except KeyboardInterrupt:
+                    pass
+                result = {"ok": True, "status": "stopped", "transport": args.transport}
+            else:
+                result = carrier.listen(root, limit=args.limit, timeout=args.timeout)
+        else:
+            result = _request(root, "msg", "listen", {"limit": args.limit, "timeout": args.timeout})
     elif service == "msg" and args.action == "whoami":
         origin = transport.node(root)
         endpoint, source = _actor(origin)
         result = {"ok": True, "device": origin, "sender_endpoint": endpoint,
-                  "sender_identity_source": source, "status": "identified" if endpoint else "device_only"}
+                  "sender_identity_source": source, "status": "identified" if endpoint else "device_only",
+                  **_return_readiness(root, endpoint)}
     elif service == "msg" and args.action in {"send", "forward"}:
         from src.cli import letters
         if args.action == "forward" or args.also or args.also_profile or getattr(args, "audience", "callback") != "callback":
@@ -732,13 +909,18 @@ def _parse_and_run(root, argv, *, parser=None):
             if args.session is not None and args.session != own_thread:
                 raise ValueError("Registration is only for this executor's own chat")
             result = _register_caller(root)
+        elif args.discover:
+            if args.id or args.codex_home or args.claude_home or args.steer or args.idle_only or args.queue:
+                raise ValueError("Discovery accepts only optional --client and --session filters")
+            result = sessions.discover(root, client=args.client, session=args.session)
         elif args.capabilities:
             if args.id or args.session or args.codex_home or args.claude_home or args.steer or args.idle_only or args.queue:
                 raise ValueError("Capabilities is read-only; do not combine it with a notification")
-            result = sessions.capabilities()
+            result = sessions.capabilities(root)
         else:
             if not args.id or not args.session:
                 raise ValueError("AI notification requires --session and a local inbox message ID")
+            args.client = args.client or "opencode"
             spec = sessions.descriptor(args.client)
             requested_mode = select_delivery(spec, args.steer, args.queue, args.idle_only)
             steer = args.steer or (requested_mode == "send_now" and spec.get("native_send_now_flag") == "steer")
@@ -790,11 +972,13 @@ def _parse_and_run(root, argv, *, parser=None):
                                                      values.pop("from_profile"))
                 recipient = _address(destination, values.pop("to_client"), values.pop("to_session"),
                                      values.pop("to_profile"))
+                if values.get("inbox_wait") is not None and (wide or destination != origin):
+                    raise ValueError("Inbox waiting requires one local recipient chat")
                 if wide and recipient:
                     raise ValueError("Choose a device-wide inbox or a specific recipient")
                 if not wide and not recipient:
                     recipient = actor if destination == origin else None
-                    if not recipient and (actor or collecting()) and not values.get("id"):
+                    if not recipient and (actor or collecting() or values.get("inbox_wait") is not None) and not values.get("id"):
                         return _emit({"ok": False, "status": "requires_reader_identity",
                                       "error_code": "INBOX_SCOPE_REQUIRED",
                                       "error_message": "Select the recipient with --to-client and --to-session, identify your local chat, or explicitly request --device-inbox."})
@@ -807,9 +991,14 @@ def _parse_and_run(root, argv, *, parser=None):
         values = {key: value for key, value in values.items() if value is not None}
         if action == "wait" and not 0 <= args.timeout <= 600:
             raise ValueError("Wait must be within 0 to 600 seconds")
-        wait_limit = 15 + args.timeout if action == "wait" else 60
-        result = _call(root, host, service, "list" if action in {"inbox", "list"} else action,
-                       values, wait_limit)
+        if "inbox_wait" in values:
+            from src.runtime import messages
+            values["timeout"] = values.pop("inbox_wait")
+            result = messages.wait_inbox(root, values)
+        else:
+            wait_limit = 15 + args.timeout if action == "wait" else 60
+            result = _call(root, host, service, "list" if action in {"inbox", "list"} else action,
+                           values, wait_limit)
         if action == "receipt" and result.get("message") and result.get("ok"):
             from src.cli.letters import reply_choices
             result["reply_choices"] = reply_choices(result["message"], root=root)
@@ -836,7 +1025,12 @@ def main(argv=None):
         return 0
     try:
         root = transport.home()
+        if argv[:2] == ["msg", "host-events"]:
+            # A host subscription outlives individual calls and their routing snapshots.
+            return _parse_and_run(root, argv)
         with transport.routing_snapshot(root):
+            if len(argv) == 2 and argv[0] == "_rpc_mail":
+                return _serve_one(root, mailbox_sender=argv[1])
             return _serve_one(root) if argv == ["_rpc"] else _parse_and_run(root, argv)
     except (OSError, ValueError, RuntimeError) as exc:
         return _emit(_error(exc))

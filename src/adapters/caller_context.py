@@ -77,6 +77,21 @@ def normalize(meta):
         if not isinstance(identifier, str) or not re.fullmatch(r"ses_[A-Za-z0-9_-]{1,100}", identifier):
             return _empty(source="invalid_mcp_meta")
         candidates.append(("opencode", identifier))
+    if "xdev/session" in meta:
+        # A locally connected host may identify its own third-party conversation.
+        # Built-in identities retain their existing native provenance.
+        from src.adapters import sessions
+        address = meta["xdev/session"]
+        if not isinstance(address, Mapping) or set(address) != {"client", "session"}:
+            return _empty(source="invalid_mcp_meta")
+        try:
+            client = sessions.client_name(address["client"])
+            session = sessions.canonical_session(client, address["session"])
+        except ValueError:
+            return _empty(source="invalid_mcp_meta")
+        if client in sessions.ADAPTERS and (client, session) not in candidates:
+            return _empty(source="invalid_mcp_meta")
+        candidates.append((client, session))
     unique = set(candidates)
     if len(unique) > 1:
         return _empty("conflict", "conflicting_mcp_meta")
@@ -84,7 +99,7 @@ def normalize(meta):
         return _empty()
     client, session = unique.pop()
     return {"status": "ready", "client": client, "session": session,
-            "source": client + "_mcp_meta"}
+            "source": "xdev_session_meta" if "xdev/session" in meta and client not in {"codex", "opencode"} else client + "_mcp_meta"}
 
 
 @contextmanager

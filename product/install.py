@@ -324,6 +324,9 @@ def service(kit, options):
     names = device_helpers(kit, metadata)
     deploy = load_at(kit / "deploy" / "deploy.py")
     root = physical(options.root or deploy.install_root())
+    with_dsh = getattr(options, "with_dsh", False)
+    if with_dsh and (root != physical(deploy.install_root()) or getattr(options, "cli_only", False)):
+        raise ValueError("The DSH client requires the standard installation root and MCP dependencies")
     if kit.is_relative_to(root) or root.is_relative_to(kit):
         raise ValueError("Keep the installation root separate from the extracted kit")
     catalog_dir = physical(root / "state" / "product")
@@ -376,21 +379,39 @@ def service(kit, options):
         if not selected:
             raise ValueError("No previous release recorded")
         binding_files = transition(root, current, selected, names, deploy, None if rollback else options)
+        client_files, client_receipt = [], None
+        if root == physical(deploy.install_root()) and (with_dsh or (current and not getattr(options, "cli_only", False))):
+            sys.path.insert(0, str(kit / "deploy"))
+            try:
+                import dsh_roots
+                client_files, client_receipt = dsh_roots.profile_transition(root, current, selected,
+                                                                           explicit=with_dsh, rollback=rollback)
+            finally:
+                sys.path.pop(0)
         changes = []
         try:
-            for path, before, after in ((catalog_path, old_catalog, new_catalog), *binding_files):
+            for path, before, after in ((catalog_path, old_catalog, new_catalog), *binding_files, *client_files):
                 if before != after:
-                    update_file(deploy, path, before, after)
+                    if path.name == "cordis.patch.yml":
+                        dsh_roots.clients.publish_profile(path, before, after)
+                    else:
+                        update_file(deploy, path, before, after)
                     changes.append((path, after, before))
             deploy.change_pointer(root, selected, expect=current or "none", rollback=rollback)
         except Exception:
             for path, before, after in reversed(changes):
-                update_file(deploy, path, before, after)
+                if path.name == "cordis.patch.yml":
+                    dsh_roots.clients.publish_profile(path, before, after)
+                else:
+                    update_file(deploy, path, before, after)
             raise
         result = status(deploy, root, catalog_path, names)
         if installed_mcp:
             result["mcp_dependencies"] = {"state": "verified", "reused": installed_mcp["reused"],
-                                          "archive_sha256": installed_mcp["archive_sha256"]}
+                                          "archive_sha256": installed_mcp["archive_sha256"],
+                                          "preserved_external_directories": installed_mcp["preserved_external_directories"]}
+        if client_receipt:
+            result["dsh"] = client_receipt
         return result
 
 
@@ -401,6 +422,7 @@ def parser():
     for name in ("install", "upgrade"):
         action = commands.add_parser(name)
         action.add_argument("--name", help="Choose this device's address; the default is its Windows computer name")
+        action.add_argument("--with-dsh", action="store_true", help="Enable two-way original-chat mail in the installed DeepSeek Harness profile")
         action.add_argument("--alias", action="append", default=[], help="Additional address for this device (repeatable)")
         action.add_argument("--identity-key", help="Initial device address to keep when adopting an existing mailbox")
         action.add_argument("--peer", help="Name of an authorized remote device")

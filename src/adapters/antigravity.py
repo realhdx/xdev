@@ -45,7 +45,7 @@ def _session(value):
 
 def _read(path, limit=MAX_BYTES):
     path = Path(path)
-    if path.is_symlink() or path.is_junction() or path.stat().st_size > limit:
+    if path.is_symlink() or (os.name == "nt" and path.is_junction()) or path.stat().st_size > limit:
         raise ValueError("Invalid native Sidecar bridge document")
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -73,7 +73,8 @@ def _binding(root, session):
     path = Path(root) / "state/antigravity-native/binding.json"
     try:
         binding = _read(path, 16384)
-        if (not isinstance(binding, dict) or binding.get("schema") != SCHEMA or session not in binding.get("sessions", [])
+        if (not isinstance(binding, dict) or binding.get("schema") != SCHEMA
+                or (session not in binding.get("sessions", []) and binding.get("scope") != "verified_project_roots")
                 or type(binding.get("port")) is not int or not 1 <= binding["port"] <= 65535
                 or type(binding.get("pid")) is not int
                 or not re.fullmatch(r"[a-f0-9]{64}", binding.get("token", ""))):
@@ -93,7 +94,10 @@ def inspect(root, session):
     binding = _binding(root, session)
     if binding is None:
         return {"ok": False, "status": "requires_activation", "client": "antigravity", "session": session}
-    return _request(binding, {"op": "inspect", "session": session})
+    result = _request(binding, {"op": "inspect", "session": session})
+    if result.get("session") != session or result.get("client") != "antigravity":
+        return {"ok": False, "status": "binding_unverified", "client": "antigravity", "session": session}
+    return result
 
 
 def submit(root, identifier, session, steer=False, idle_only=False):
@@ -183,15 +187,47 @@ def _native(executable, operation, *args, timeout=TIMEOUT):
             threading.Thread(target=cleanup, daemon=True).start()
 
 
-def _metadata_shape(result):
+def _metadata_value(result):
     value = result.get("response")
     if isinstance(value, str):
         try:
-            value = json.loads(value)
+            return json.loads(value)
         except ValueError:
-            return {"response_type": "text", "busy_observable": False}
-    return {"response_type": type(value).__name__,
+            return value
+    return value
+
+
+def _metadata_shape(result):
+    value = _metadata_value(result)
+    return {"response_type": "text" if isinstance(value, str) else type(value).__name__,
             "response_keys": sorted(value) if isinstance(value, dict) else [], "busy_observable": False}
+
+
+def _project_for_root(result, session):
+    """The native root ID also appears in child metadata, so verify parent and depth."""
+    value = _metadata_value(result)
+    conversation = value.get("conversationMetadata") if isinstance(value, dict) else None
+    metadata = conversation.get("metadata") if isinstance(conversation, dict) else None
+    if (not isinstance(metadata, dict) or metadata.get("rootConversationId") != session
+            or metadata.get("parentConversationId") != ""
+            or type(metadata.get("nestingDepth")) is not int or metadata["nestingDepth"] != 0):
+        return None
+    project = metadata.get("projectId")
+    return project if isinstance(project, str) and 0 < len(project) <= 256 and project.isprintable() else None
+
+
+def _bind_project(directory, executable, anchor):
+    project = _project_for_root(_native(executable, "get-conversation-metadata", anchor), anchor)
+    if project is None:
+        raise ValueError("The native host could not verify the selected root conversation and its project")
+    # A chat moved to a different project must not widen the previous grant after a host restart.
+    with closing(sqlite3.connect(directory / "admissions.sqlite3", timeout=5)) as db, db:
+        db.execute("CREATE TABLE IF NOT EXISTS project_scopes (anchor TEXT PRIMARY KEY, project TEXT NOT NULL)")
+        db.execute("INSERT OR IGNORE INTO project_scopes VALUES (?,?)", (anchor, project))
+        pinned = db.execute("SELECT project FROM project_scopes WHERE anchor=?", (anchor,)).fetchone()
+        if pinned != (project,):
+            raise ValueError("The anchor chat changed projects; select a root chat in the intended project")
+    return project
 
 
 def _trace_notice(session, notice):
@@ -224,14 +260,17 @@ def _trace_notice(session, notice):
     return None
 
 
-def _handle(directory, executable, sessions, payload):
+def _handle(directory, executable, sessions, payload, *, project=None):
     if not isinstance(payload, dict):
         raise ValueError("Supply one native Sidecar request object")
     session = _session(payload.get("session"))
-    if session not in sessions:
+    if project is None and session not in sessions:
         raise ValueError("Conversation is not explicitly bound to this native Sidecar")
     if payload.get("op") == "inspect":
         result = _native(executable, "get-conversation-metadata", session)
+        if project is not None and _project_for_root(result, session) != project:
+            return {"ok": False, "status": "out_of_scope", "session": session, "client": "antigravity",
+                    "model_calls": 0, "error_code": "ANTIGRAVITY_PROJECT_OR_CHAT_UNVERIFIED"}
         return {"ok": True, "status": "ready", "session": session, "client": "antigravity",
                 "model_calls": 0, "native_api": "agentapi get-conversation-metadata",
                 "delivery_scope": "original_session", "placement": "unverified", **_metadata_shape(result)}
@@ -260,6 +299,16 @@ def _handle(directory, executable, sessions, payload):
     receipt = {"session": session, "client": "antigravity", "message_id": identifier,
                "notice_id": notice_id, "delivery_scope": "original_session", "placement": "unverified",
                "delivery_mode": "queue", "model_status": "unverified"}
+    if project is not None:
+        # Verify the address and authorized project before reserving this ID. A read-only failure is retryable.
+        try:
+            metadata = _native(executable, "get-conversation-metadata", session)
+        except (OSError, ValueError, RuntimeError, TimeoutError):
+            return {**receipt, "ok": False, "status": "requires_activation",
+                    "error_code": "ANTIGRAVITY_METADATA_UNAVAILABLE", "native_write_attempted": False}
+        if _project_for_root(metadata, session) != project:
+            return {**receipt, "ok": False, "status": "out_of_scope",
+                    "error_code": "ANTIGRAVITY_PROJECT_OR_CHAT_UNVERIFIED", "native_write_attempted": False}
     with closing(sqlite3.connect(directory / "admissions.sqlite3", timeout=5)) as db:
         db.execute("CREATE TABLE IF NOT EXISTS admissions (session TEXT,message_id TEXT,digest TEXT,state TEXT,evidence TEXT,PRIMARY KEY(session,message_id))")
         db.commit()
@@ -283,7 +332,8 @@ def _handle(directory, executable, sessions, payload):
         db.commit()
     try:
         # Existence is checked through the public API. No second daemon/writer is opened.
-        _native(executable, "get-conversation-metadata", session)
+        if project is None:
+            _native(executable, "get-conversation-metadata", session)
         response = _native(executable, "send-message", "--title=" + title, session, notice)
         if response.get("response") is None:
             raise ValueError("native API supplied no admission receipt")
@@ -320,7 +370,19 @@ def _start_token():
     return str((times[0].dwHighDateTime << 32) | times[0].dwLowDateTime)
 
 
-def sidecar(directory, executable, sessions):
+def _prepare_bridge(directory):
+    marker = directory / ".xdev-owned.json"
+    if not directory.exists():
+        parent_marker = directory.parent.parent / ".xdev-install.json"
+        if _read(parent_marker) != {"app": "CrossDeviceCollab", "schema": 1}:
+            raise ValueError("Initialize the Antigravity receiver under the selected xdev installation")
+        directory.mkdir()
+        marker.write_text(json.dumps({"kind": "antigravity-native", "version": 1}), encoding="utf-8")
+    if marker.is_symlink() or (os.name == "nt" and marker.is_junction()) or not marker.is_file():
+        raise ValueError("Sidecar bridge ownership marker is missing")
+
+
+def sidecar(directory, executable, sessions, *, project_of=None):
     directory, executable = Path(directory), Path(executable)
     if (not directory.is_absolute() or directory.name != "antigravity-native" or directory.parent.name != "state"
             or not executable.is_absolute() or executable.name.lower() != "language_server.exe"):
@@ -328,12 +390,18 @@ def sidecar(directory, executable, sessions):
     for item in [directory, *directory.parents]:
         if item.is_symlink() or item.is_junction():
             raise ValueError("Linked bridge paths are not allowed")
-    if not (directory / ".xdev-owned.json").is_file():
-        raise ValueError("Sidecar bridge ownership marker is missing")
     # These are this process's native inherited plumbing; never export their values.
     if not os.environ.get("ANTIGRAVITY_LS_ADDRESS") or not os.environ.get("ANTIGRAVITY_CSRF_TOKEN"):
         raise RuntimeError("Launch the receiver as an explicitly enabled native Sidecar")
-    sessions = [_session(value) for value in sessions]
+    _prepare_bridge(directory)
+    sessions = [_session(value) for value in sessions or []]
+    project = None
+    if project_of is not None:
+        if sessions:
+            raise ValueError("Select fixed chats or the project of one existing root chat")
+        project = _bind_project(directory, executable, _session(project_of))
+    elif not sessions:
+        raise ValueError("Select at least one existing conversation or its project")
     token = secrets.token_hex(32)
 
     class Handler(BaseHTTPRequestHandler):
@@ -349,7 +417,7 @@ def sidecar(directory, executable, sessions):
             self.connection.settimeout(3)
             try:
                 payload = json.loads(self.rfile.read(size))
-                result = _handle(directory, executable, sessions, payload)
+                result = _handle(directory, executable, sessions, payload, project=project)
             except (OSError, ValueError, RuntimeError, TypeError, TimeoutError) as error:
                 result = {"ok": False, "status": "rejected", "error_class": type(error).__name__}
             raw = json.dumps({"schema": SCHEMA, **result}).encode()
@@ -364,6 +432,8 @@ def sidecar(directory, executable, sessions):
     binding = {"schema": SCHEMA, "pid": os.getpid(), "process_start": _start_token(),
                "port": server.server_port, "token": token, "sessions": sessions,
                "native_parent_pid": os.getppid(), "created_at": datetime.now(timezone.utc).isoformat()}
+    if project is not None:
+        binding["scope"] = "verified_project_roots"
     binding_path = directory / "binding.json"
     binding_path.write_text(json.dumps(binding), encoding="utf-8")
     print(json.dumps({"status": "ready", "schema": SCHEMA, "model_requests": 0}), flush=True)
@@ -382,6 +452,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--bridge", type=Path, required=True)
     parser.add_argument("--agentapi", type=Path, required=True)
-    parser.add_argument("--session", action="append", required=True)
+    scope = parser.add_mutually_exclusive_group(required=True)
+    scope.add_argument("--session", action="append", help="Limit delivery to one existing chat (repeatable)")
+    scope.add_argument("--project-of", metavar="ROOT_CHAT_ID",
+                       help="Resolve original chats in this root chat's project using native metadata on each delivery")
     args = parser.parse_args()
-    sidecar(args.bridge, args.agentapi, args.session)
+    sidecar(args.bridge, args.agentapi, args.session, project_of=args.project_of)

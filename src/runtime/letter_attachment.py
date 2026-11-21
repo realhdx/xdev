@@ -94,6 +94,10 @@ def make_attachment(stored_message, *, mode="forward", quote=None, include_full=
     if not isinstance(stored_message, dict) or any(stored_message.get(k) for k in
             ("sender_endpoint_error", "recipient_identity_error", "letter_attachment_error")):
         raise ValueError("Cannot snapshot an invalid original message")
+    if stored_message.get("withdrawn_at"):
+        raise ValueError("The original was withdrawn and cannot be forwarded or quoted.")
+    if stored_message.get("content_archived"):
+        raise ValueError("Restore the archived original before quoting or forwarding its content.")
     if stored_message.get("letter_attachment_summary") is not None and stored_message.get("letter_attachment") is None:
         raise ValueError("Read the original message by ID before forwarding; an attachment summary omits its source letter")
     if mode not in ("forward", "quote") or type(include_full) is not bool:

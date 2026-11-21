@@ -136,10 +136,26 @@ class ProductPackageTests(unittest.TestCase):
 
     def test_release_identity_must_match_runtime(self):
         metadata = self.source / "product/release.json"
-        metadata.write_text(json.dumps({**self.release, "version": "2.0.0"}), encoding="utf-8")
+        metadata.write_text(json.dumps({**self.release, "version": "1.0.1"}), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "product identity"):
             self.build()
         self.assertFalse(list(self.output.glob("*.zip")))
+
+    def test_surface_runtime_is_required_only_from_its_release(self):
+        preview = "1.1.0-preview.1"
+        extras = verify.runtime_filenames(preview) - verify.runtime_filenames("1.0.3")
+        self.assertEqual(len(extras), 4)
+        self.select_version(preview)
+        with self.assertRaisesRegex(ValueError, "Runtime inventory"):
+            self.build()
+        for name in extras:
+            (self.source / name).write_bytes(b"fixture component\n")
+        self.select_version(preview)
+        built = self.build()
+        self.assertEqual(verify.verify_archive(built["archive"]), self.release)
+        self.select_version("1.0.3")
+        with self.assertRaisesRegex(ValueError, "Runtime inventory"):
+            self.build()
 
     def test_documentation_edition_keeps_original_and_executable_payloads(self):
         original = self.build()
@@ -163,6 +179,31 @@ class ProductPackageTests(unittest.TestCase):
         for result in (original, edition):
             self.assertEqual(verify.file_digest(Path(result["archive"])), result["sha256"])
 
+    def test_preview_three_adds_relay_runtime_guide_and_restricted_config(self):
+        old, new = "1.1.0-preview.2", "1.1.0-preview.3"
+        relay_files = {verify.RELAY_GUIDE, verify.RELAY_ACL}
+        self.assertEqual(verify.package_filenames(new) - verify.package_filenames(old), relay_files)
+        self.assertEqual(verify.runtime_filenames(new) - verify.runtime_filenames(old),
+                         {"src/adapters/portable.py", "src/runtime/outbox.py", "src/runtime/session_relay.py"})
+        self.assertEqual(verify.runtime_filenames("1.1.0-preview.12"), verify.runtime_filenames("1.1.0"))
+        for name in verify.runtime_filenames(new) - verify.runtime_filenames():
+            (self.source / name).write_bytes(b"fixture runtime\n")
+        self.select_version(new)
+        for name in relay_files:
+            path = self.source / name
+            path.parent.mkdir(exist_ok=True)
+            path.write_bytes(b"public example\n")
+        manual = self.source / "product/README.md"
+        manual.write_text("[Relay guide](../design/session-relay.md)", encoding="utf-8")
+        result = self.build()
+        self.assertEqual(verify.verify_archive(result["archive"], result["sha256"]), self.release)
+        with zipfile.ZipFile(result["archive"]) as archive:
+            self.assertEqual(archive.read("README.md"), b"[Relay guide](design/session-relay.md)")
+            self.assertTrue(relay_files.issubset(archive.namelist()))
+        (self.source / verify.RELAY_GUIDE).unlink()
+        with self.assertRaisesRegex(ValueError, "Missing required product file"):
+            self.build()
+
     def test_invalid_documentation_revision_is_rejected(self):
         metadata = self.source / "product/release.json"
         for value in (None, 0, -1, False, True, 1.0, "1"):
@@ -171,6 +212,50 @@ class ProductPackageTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "documentation_revision"):
                     self.build()
         self.assertFalse(list(self.output.glob("*.zip")))
+
+    def test_active_subscription_signal_enters_preview_ten(self):
+        old, new = "1.1.0-preview.9", "1.1.0-preview.10"
+        self.assertEqual(verify.runtime_filenames(new) - verify.runtime_filenames(old), {"src/runtime/github_demand.py"})
+
+    def test_host_arrival_protocol_enters_preview_eleven(self):
+        added = verify.runtime_filenames("1.1.0-preview.11") - verify.runtime_filenames("1.1.0-preview.10")
+        self.assertEqual(added, {"src/adapters/mail_arrival.py", "src/adapters/mail_arrival_stdio.py"})
+
+    def test_background_receiver_enters_the_kit_with_local_subscriptions(self):
+        old, new = "1.1.0-preview.7", "1.1.0-preview.8"
+        self.assertEqual(verify.package_filenames(new) - verify.package_filenames(old), {verify.MAIL_LISTENER_SETUP})
+
+    def test_private_github_mail_adds_runtime_setup_and_guide(self):
+        old, new = "1.1.0-preview.6", "1.1.0-preview.7"
+        self.assertEqual(verify.runtime_filenames(new) - verify.runtime_filenames(old), {"src/runtime/github_mail.py"})
+        self.assertEqual(verify.package_filenames(new) - verify.package_filenames(old),
+                         {verify.GITHUB_MAIL_GUIDE, verify.GITHUB_MAIL_SETUP})
+
+    def test_preview_six_contains_resident_hosts_discovery_and_transport_selection(self):
+        old, new = "1.1.0-preview.5", "1.1.0-preview.6"
+        self.assertEqual(verify.runtime_filenames(new) - verify.runtime_filenames(old),
+                         {"src/adapters/resident.py", "src/adapters/host_catalog.py",
+                          "src/adapters/mcp_catalog.py", "src/runtime/mail_routes.py"})
+        self.assertEqual(verify.package_filenames(new) - verify.package_filenames(old), verify.HOST_GUIDES)
+
+    def test_preview_four_adds_direct_mail_and_optional_queue(self):
+        old, new = "1.1.0-preview.3", "1.1.0-preview.4"
+        self.assertEqual(verify.runtime_filenames(new) - verify.runtime_filenames(old),
+                         {"src/runtime/ssh_mail.py", "src/runtime/managed_queue.py"})
+        self.assertEqual(verify.package_filenames(new) - verify.package_filenames(old), {verify.MANAGED_QUEUE_GUIDE})
+        self.assertEqual(verify.runtime_filenames(new), verify.runtime_filenames("1.1.0-preview.5"))
+        for filename in verify.runtime_filenames(new) - verify.runtime_filenames():
+            (self.source / filename).write_bytes(b"fixture runtime\n")
+        for filename in (verify.RELAY_ACL, verify.RELAY_GUIDE, verify.MANAGED_QUEUE_GUIDE):
+            path = self.source / filename
+            path.parent.mkdir(exist_ok=True)
+            path.write_bytes(b"fixture instructions\n")
+        (self.source / "product/README.en.md").write_bytes(b"[Queue](../design/managed-queue.md)")
+        self.select_version(new)
+        result = self.build()
+        with zipfile.ZipFile(result["archive"]) as archive:
+            self.assertEqual(archive.read("README.en.md"), b"[Queue](design/managed-queue.md)")
+            self.assertEqual(archive.read(verify.MANAGED_QUEUE_GUIDE), b"fixture instructions\n")
 
     def test_license_and_citation_are_required_from_1_0_3_docs_3(self):
         self.select_version("1.0.3")

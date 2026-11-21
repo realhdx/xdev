@@ -6,7 +6,8 @@ export const name = 'xdev-session-mailbox';
 export const inject = ['tools', 'agents'];
 const toolName = 'mcp__xdev__xdev_msg';
 const fallback = 'mcp__xdev__xdev_msg_unbound';
-const actions = ['whoami', 'send', 'forward', 'reply', 'read', 'receipt', 'inbox', 'list', 'wait', 'bind'];
+const actions = ['whoami', 'send', 'forward', 'reply', 'read', 'receipt', 'status', 'inbox', 'list', 'wait', 'bind',
+  'preflight', 'availability', 'report', 'recall', 'replace', 'correct'];
 const sessionPattern = /^session-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export function caller(ctx, execution) {

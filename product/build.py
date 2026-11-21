@@ -70,8 +70,9 @@ def build(source, output_dir, *, wheelhouse=None, dependencies=None):
     files = source_inputs(source, release["version"], revision)
     edition = f"-docs.{revision}" if revision else ""
     reviewed = {p.relative_to(source).as_posix() for p in deploy.source_files(source)}
-    if reviewed != verify.runtime_filenames():
-        unexpected = sorted(reviewed ^ verify.runtime_filenames())
+    expected = verify.runtime_filenames(release["version"])
+    if reviewed != expected:
+        unexpected = sorted(reviewed ^ expected)
         raise ValueError(f"Runtime inventory differs from the reviewed file list: {unexpected}")
     output_dir = Path(output_dir).resolve()
     if any(output_dir.is_relative_to(source / tree) for tree in deploy.SOURCE_TREES):
@@ -102,6 +103,12 @@ def build(source, output_dir, *, wheelhouse=None, dependencies=None):
         with zipfile.ZipFile(candidate, "w") as archive:
             for name, path in sorted(files.items()):
                 blob = path.read_bytes()
+                if path.parent == source / "product" and name.endswith(".md"):
+                    # Product manuals move from product/ to the archive root.
+                    for guide in (verify.RELAY_GUIDE, verify.MANAGED_QUEUE_GUIDE, verify.GITHUB_MAIL_GUIDE, *verify.HOST_GUIDES, *verify.CONTACT_GUIDES):
+                        if guide in files:
+                            target = guide.encode("ascii")
+                            blob = blob.replace(b"](../" + target, b"](" + target)
                 record = deploy.name_record(name)
                 # Nested archives are already complete, deterministic containers.
                 if name in (verify.RUNTIME, verify.DEPENDENCIES):

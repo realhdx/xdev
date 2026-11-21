@@ -72,7 +72,7 @@ def _parser(group=None):
 
 def help_text(group="file", operation=""):
     """Format the requested parser directly; no parser exit or child process."""
-    if group not in {"file", "exec", "job", "msg", "ai"}:
+    if group not in {"file", "exec", "job", "msg", "ai", "surface"}:
         raise CLIArgumentError("Unknown tool group")
     if not isinstance(operation, str) or operation.startswith("-"):
         raise CLIArgumentError("Invalid help operation")
@@ -94,7 +94,7 @@ def invoke(argv, root=None):
         if not isinstance(argv, (list, tuple)) or not all(isinstance(x, str) for x in argv):
             raise CLIArgumentError("CLI arguments must be a list of strings")
         argv = list(argv)
-        if not argv or argv[0] not in {"who", "exec", "job", "msg", "ai", "file"}:
+        if not argv or argv[0] not in {"who", "exec", "job", "msg", "ai", "file", "surface"}:
             raise CLIArgumentError("Unsupported MCP dispatcher operation")
         selected_root = Path(root) if root is not None else transport.home()
         with cli_result.capture(), transport.routing_snapshot(selected_root):

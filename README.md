@@ -26,6 +26,10 @@ xdev 让消息在 AI 聊天之间自由往来，无论它们是否同机、是�
 
 从源码构建或运行测试见[构建指南](BUILDING.md)，核对版本和升级说明见[版本记录](product/CHANGELOG.md)。
 
+**预览功能**。Windows 和 Linux 端可以通过已配对的 SSH 连接直接寄信。需要跨网暂存时，两端可启用端到端加密，让自选中继只接触密文。第三方 AI 应用也可登记自己的会话地址。[跨网络会话通信指南](design/session-relay.md) · [托管短存队列](design/managed-queue.md)
+
+**发信前，对方现在有空吗？** 新版预览可以查看指定聊天的状态，寄出后沿同一封信核对已读、处理进展和回信意向。任务变了，还可以撤回未读信或寄送更正稿。[当前预览版](https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13) · [信件状态与留存](design/mail-lifecycle.md)
+
 ## 安装后使用
 
 ### 传回一份结果文件

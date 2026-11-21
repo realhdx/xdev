@@ -5,9 +5,10 @@ import contextlib
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import sysconfig
@@ -19,6 +20,9 @@ import zipfile
 APP = "CrossDeviceCollab"
 MARKER = ".xdev-install.json"
 RECEIPT = ".xdev-deps.json"
+# Some existing Windows installations keep this Node CLI alongside the Python
+# site. Its subtree is not a Python search path or part of a wheel receipt.
+COMPANION_DIR = "codebuddy-cli"
 LOCK = "requirements.lock.txt"
 MANIFEST = "bundle-manifest.json"
 SUMS = "SHA256SUMS.txt"
@@ -47,9 +51,17 @@ def sha256(value):
 def check_physical(path):
     absolute = Path(os.path.abspath(path))
     for entry in (absolute, *absolute.parents):
-        if entry.is_symlink() or entry.is_junction():
+        try:
+            info = entry.lstat()
+        except FileNotFoundError:
+            continue
+        if linked(info):
             raise ValueError(f"Linked optional dependency path: {entry}")
     return absolute
+
+
+def linked(info):
+    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
 
 
 def read_small(path, limit):
@@ -204,16 +216,45 @@ FastMCP("xdev-dependency-verification")
     run([sys.executable, "-I", "-B", "-X", "utf8", "-c", source, str(target)], timeout=25)
 
 
-def inventory(target):
+def inventory(target, *, recorded=None):
+    target = check_physical(target)
+    managed_dirs = set()
+    if recorded is not None:
+        for name, checksum in recorded.items():
+            parts = PurePosixPath(name)
+            if (not parts.parts or parts.is_absolute() or parts.as_posix() != name or ".." in parts.parts
+                    or "\\" in name or ":" in name or name == RECEIPT or not isinstance(checksum, str)
+                    or not SHA.fullmatch(checksum) or parts.parts[0].casefold() == COMPANION_DIR):
+                raise ValueError("Invalid managed dependency file in the installation receipt")
+            managed_dirs.update(p.as_posix() for p in parts.parents)
     files = {}
-    for directory, children, names in target.walk():
-        for name in [*children, *names]:
-            check_physical(directory / name)
-        for name in names:
-            file = directory / name
-            relative = file.relative_to(target).as_posix()
-            if relative != RECEIPT:
-                files[relative] = digest(file)
+    pending = [(target, False)]
+    while pending:
+        directory, companion = pending.pop()
+        # Recheck before descending. DirEntry metadata may be cached by Windows.
+        check_physical(directory)
+        with os.scandir(directory) as children:
+            for entry in children:
+                info = entry.stat(follow_symlinks=False)
+                if linked(info):
+                    raise ValueError(f"Linked optional dependency path: {entry.path}")
+                path = Path(entry.path)
+                relative = path.relative_to(target).as_posix()
+                if stat.S_ISDIR(info.st_mode):
+                    foreign = companion or (recorded is not None and relative == COMPANION_DIR)
+                    if recorded is not None and not foreign and relative not in managed_dirs:
+                        raise ValueError(f"Unrecorded dependency directory: {relative}")
+                    pending.append((path, foreign))
+                elif not stat.S_ISREG(info.st_mode):
+                    raise ValueError(f"Unexpected dependency file type: {relative}")
+                elif not companion:
+                    if recorded is not None and path.lstat().st_nlink > 1:
+                        raise ValueError(f"Hard-linked managed dependency: {relative}")
+                    if relative == RECEIPT:
+                        continue
+                    if recorded is not None and relative not in recorded:
+                        raise ValueError(f"Unrecorded dependency file: {relative}")
+                    files[relative] = digest(path)
     return files
 
 
@@ -223,11 +264,13 @@ def verify_existing(destination, checksum):
     record = json.loads(read_small(destination / RECEIPT, 2 * 1024 * 1024))
     expected = {"schema": 1, "archive_sha256": checksum, "lock_sha256": PINNED[LOCK],
                 "packages": PACKAGES}
-    if any(record.get(key) != value for key, value in expected.items()):
+    if not isinstance(record, dict) or any(record.get(key) != value for key, value in expected.items()):
         raise ValueError("The existing deps directory belongs to a different dependency release")
-    if not isinstance(record.get("files"), dict) or inventory(destination) != record["files"]:
+    files = record.get("files")
+    if not isinstance(files, dict) or not files or inventory(destination, recorded=files) != files:
         raise ValueError("The existing deps directory has been changed")
     verify_imports(destination)
+    return [COMPANION_DIR] if (destination / COMPANION_DIR).is_dir() else []
 
 
 def check_archive(path, checksum):
@@ -248,8 +291,9 @@ def install(root, path, checksum):
     archive = check_archive(path, checksum)
     destination = check_physical(root / "deps")
     with deployment_lock(root):
+        preserved = []
         if destination.exists():
-            verify_existing(destination, checksum)
+            preserved = verify_existing(destination, checksum)
             reused = True
         else:
             scratch = root / f".xdev-optional-{uuid4().hex}"
@@ -288,7 +332,7 @@ def install(root, path, checksum):
                 if check_physical(scratch).resolve(strict=True) == scratch and scratch.parent == root:
                     shutil.rmtree(scratch)
     return {"archive_sha256": checksum, "lock_sha256": PINNED[LOCK], "packages": PACKAGES,
-            "dependencies": str(destination), "reused": reused}
+            "dependencies": str(destination), "reused": reused, "preserved_external_directories": preserved}
 
 
 def install_pair(args, root):

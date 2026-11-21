@@ -2,12 +2,15 @@
 
 import json
 from concurrent.futures import ThreadPoolExecutor
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import Mock, patch
 
 import install
 import verify
@@ -64,6 +67,58 @@ class ProductInstallTests(KitFixture, unittest.TestCase):
         self.assertEqual(data["ok"], ok, data)
         self.assertEqual(result.returncode, 0 if ok else 1, result.stderr)
         return data
+
+    def test_standard_dsh_upgrade_and_rollback_reuse_deps_with_node_companion(self):
+        first, second = self.kit("1.0.0"), self.kit("1.0.1")
+        self.root = self.base / "CrossDeviceCollab"
+        one = self.run_cli(first, "install", "--cli-only")
+        real_load = install.load_at
+        optional = real_load(SOURCE / "deploy/optional.py")
+        clients = real_load(SOURCE / "deploy/clients.py")
+        site = self.root / "deps"
+        (site / "mcp").mkdir(parents=True)
+        (site / "mcp/__init__.py").write_text("verified package content")
+        checksum = optional.digest(second / verify.DEPENDENCIES)
+        receipt = {"schema": 1, "archive_sha256": checksum, "lock_sha256": optional.PINNED[optional.LOCK],
+                   "packages": optional.PACKAGES, "files": optional.inventory(site)}
+        (site / optional.RECEIPT).write_text(json.dumps(receipt))
+        companion = site / "codebuddy-cli/node_modules"
+        companion.mkdir(parents=True)
+        marker = companion / "outside-python.js"
+        marker.write_bytes(b"leave the other app alone")
+        profile = self.base / "cordis.patch.yml"
+        profile.write_bytes(b"old")
+
+        def plan(root, current, selected, *, explicit, rollback):
+            self.assertEqual(root, self.root)
+            self.assertNotEqual(current, selected)
+            self.assertEqual(explicit, not rollback)
+            before, after = (b"new", b"old") if rollback else (b"old", b"new")
+            return [(profile, before, after)], {"profile_configured": True}
+
+        def active(args):
+            return install.service(second, install.parser().parse_args(args))
+
+        planning = Mock(side_effect=plan)
+        with patch.dict(os.environ, {"LOCALAPPDATA": str(self.base)}), patch.dict(
+                sys.modules, {"dsh_roots": SimpleNamespace(profile_transition=planning, clients=clients)}), patch.object(
+                install, "load_at", side_effect=lambda path: optional if Path(path).name == "optional.py" else real_load(path)), patch.object(
+                optional, "verify_imports") as imports:
+            upgraded = active(["upgrade", "--expect-current", one["active"], "--with-dsh"])
+            self.assertEqual(upgraded["mcp_dependencies"]["preserved_external_directories"], ["codebuddy-cli"])
+            self.assertEqual(profile.read_bytes(), b"new")
+            self.assertEqual(marker.read_bytes(), b"leave the other app alone")
+            rolled = active(["rollback", "--expect-current", upgraded["active"], "--release", one["active"]])
+            self.assertEqual(rolled["active"], one["active"])
+            self.assertEqual(profile.read_bytes(), b"old")
+            (site / "unreviewed.pth").touch()
+            with self.assertRaisesRegex(ValueError, "Unrecorded"):
+                active(["upgrade", "--expect-current", one["active"], "--with-dsh"])
+            self.assertEqual((self.root / "current.txt").read_text().splitlines()[0], one["active"])
+            self.assertEqual(profile.read_bytes(), b"old")
+            self.assertEqual(marker.read_bytes(), b"leave the other app alone")
+            self.assertEqual(planning.call_count, 2)
+            imports.assert_called_once_with(site)
 
     def test_install_upgrade_rollback_preserve_device_state_and_launcher(self):
         first = self.kit("1.0.0")

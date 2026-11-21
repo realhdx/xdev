@@ -33,6 +33,8 @@ PRODUCTS = {
     "cursor": (".cursor/mcp.json", "json"),
 }
 NEW_SECTION_CLIENTS = {"copilot", "codebuddy", "gemini", "kimi-code", "vscode", "cursor"}
+BASE_TOOLS = ("xdev_who", "xdev_help", "xdev_file", "xdev_exec", "xdev_job", "xdev_msg")
+SURFACE_TOOLS = (*BASE_TOOLS, "xdev_surface")
 
 
 def client_config(product):
@@ -69,6 +71,26 @@ def strict_object(items):
     return value
 
 
+def installed_tools(root):
+    pointer = root / "current.txt"
+    if not pointer.exists():
+        return BASE_TOOLS
+    lines = pointer.read_text(encoding="ascii").splitlines()
+    if len(lines) not in (1, 2) or not re.fullmatch(r"[0-9a-f]{64}", lines[0]):
+        raise ValueError("Invalid active release pointer")
+    if len(lines) == 2 and lines[1] and not re.fullmatch(r"[0-9a-f]{64}", lines[1]):
+        raise ValueError("Invalid rollback release pointer")
+    release = lines[0]
+    metadata = root / "releases" / release / "src/product.json"
+    if not metadata.exists():  # Installations from before product versioning.
+        return BASE_TOOLS
+    identity = json.loads(metadata.read_bytes(), object_pairs_hook=strict_object)
+    version = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?", identity.get("version", ""))
+    if identity.get("product") != "xdev" or not version:
+        raise ValueError("Invalid installed xdev product identity")
+    return SURFACE_TOOLS if tuple(map(int, version.groups())) >= (1, 1, 0) else BASE_TOOLS
+
+
 def expected_entry(root, product=None):
     python = Path(sys.executable).resolve()
     if os.name == "nt" and python.name.lower() != "python.exe":
@@ -80,7 +102,7 @@ def expected_entry(root, product=None):
     if product in {"copilot", "codebuddy", "vscode", "cursor"}:
         entry["type"] = "stdio"
     if product == "copilot":
-        entry["tools"] = ["xdev_who", "xdev_help", "xdev_file", "xdev_exec", "xdev_job", "xdev_msg"]
+        entry["tools"] = list(installed_tools(root))
     return entry
 
 
@@ -102,6 +124,34 @@ def read_config(path):
     return data
 
 
+def client_bytes(product, path):
+    if product == "dsh" and not path.exists() and not path.is_symlink():
+        if path.name != "cordis.patch.yml" or not path.parent.is_dir() or any(p.is_symlink() or p.is_junction() for p in path.parents):
+            raise ValueError("Open DeepSeek Harness once to initialize its local profile")
+        return b""
+    return read_config(path)
+
+
+def publish_profile(path, before, after):
+    if before is not None:
+        if after is not None:
+            replace_cas(path, after, sha(before))
+        elif read_config(path) == before:
+            path.unlink()
+        else:
+            raise ValueError("DSH profile changed before removal")
+        return
+    stage = path.with_name(path.name + ".xdev-stage-" + uuid4().hex)
+    try:
+        with stage.open("xb") as stream:
+            stream.write(after)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(stage, path)  # Atomically refuse a profile created by another process.
+    finally:
+        stage.unlink(missing_ok=True)
+
+
 def transform(data, kind, entry, *, allow_new_section=False):
     text = data.decode("utf-8-sig")
     newline = "\r\n" if "\r\n" in text else "\n"
@@ -120,11 +170,17 @@ def transform(data, kind, entry, *, allow_new_section=False):
         if not isinstance(value.get(section), dict):
             raise ValueError(f"Expected the client's existing {section} object")
         servers = value[section]
-        if "xdev" in servers:
-            if servers["xdev"] != entry:
-                raise ValueError("An unlike xdev entry already exists; review before replacing")
-            return data, list(servers), False
         old = json.loads(text, object_pairs_hook=strict_object)
+        if "xdev" in servers:
+            if servers["xdev"] == entry:
+                return data, list(servers), False
+            # Migrate precisely the previous managed Copilot allowlist at the same launcher.
+            # Custom commands, extra fields and user-selected tool lists still require review.
+            other_lists = (list(BASE_TOOLS), list(SURFACE_TOOLS))
+            if entry.get("tools") not in other_lists or not any(
+                    servers["xdev"] == {**entry, "tools": catalog} for catalog in other_lists):
+                raise ValueError("An unlike xdev entry already exists; review before replacing")
+            del old[section]["xdev"]
         servers["xdev"] = entry
         indent = "\t" if re.search(r"(?m)^\t+\"", text) else 2
         result = json.dumps(value, ensure_ascii=False, indent=indent, allow_nan=False)
@@ -139,11 +195,12 @@ def transform(data, kind, entry, *, allow_new_section=False):
     if kind != "yaml-patch":
         raise ValueError("Unknown client format")
     effective = [line for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
-    if not effective or effective[0] != "- insert:" or any(line in {"---", "..."} for line in effective):
+    if (effective and effective[0] != "- insert:") or any(line in {"---", "..."} for line in effective):
         raise ValueError("Expected the installed DSH single-document insert patch list")
     block = dsh_block(entry, newline)
     if re.search(r"(?m)^\s+(?:-\s+)?(?:id|serverName):\s*['\"]?xdev['\"]?\s*$", text):
-        if not text.endswith(block):
+        generated = sum(text.count(dsh_block(entry, nl)) for nl in ("\r\n", "\n"))
+        if generated != 1 or len(re.findall(r"(?m)^\s*- id: xdev\s*$", text)) != 1 or len(re.findall(r"(?m)^\s*serverName: xdev\s*$", text)) != 1:
             raise ValueError("An unlike xdev DSH plugin already exists")
         return data, re.findall(r"(?m)^\s+- id:\s*(\S+)", text), False
     result = data + (b"" if data.endswith(b"\n") else newline.encode()) + newline.encode() + block.encode("utf-8")
@@ -190,20 +247,56 @@ def replace_cas(path, data, expected):
 
 
 def inspect(product, path, kind, root):
-    data = read_config(path)
+    data = client_bytes(product, path)
     entry = expected_entry(root, product)
-    _, names, changed = transform(data, kind, entry, allow_new_section=product in NEW_SECTION_CLIENTS)
+    updated, names, changed = registered_bytes(product, data, kind, entry)
+    if product == "dsh":
+        updated = original_dsh_profile(updated, root, prepare=False)
+        return {"product": product, "path": str(path), "format": kind, "sha256": sha(data),
+                "server_names": names[:-1] if changed else names, "xdev_exact": data == updated,
+                "stdio_registered": not changed, "expected_entry": entry}
+    if changed and kind != "yaml-patch":
+        section = "servers" if kind == "json-servers" else "mcpServers"
+        names = list(json.loads(data.decode("utf-8-sig")).get(section, {})) if data else []
+    elif changed:
+        names = names[:-1]
     return {"product": product, "path": str(path), "format": kind,
-            "sha256": sha(data), "server_names": names if not changed else names[:-1],
+            "sha256": sha(data), "server_names": names,
             "xdev_exact": not changed, "expected_entry": entry}
 
 
+def original_dsh_profile(data, root, *, prepare, release=None):
+    import dsh_roots
+    release = release or (root / "current.txt").read_text(encoding="ascii").splitlines()[0]
+    if not re.fullmatch(r"[a-f0-9]{64}", release):
+        raise ValueError("Invalid installed xdev release")
+    sys.path.insert(0, str(root / "releases" / release))
+    try:
+        from src.adapters import dsh
+    finally:
+        sys.path.pop(0)
+    updated = dsh_roots.mailbox_plugin(data, root, release, True)
+    return dsh_roots.automatic_receiver(updated, root, dsh, prepare=prepare)
+
+
+def registered_bytes(product, data, kind, entry):
+    # A newly opened Antigravity App may leave this user file at exactly zero bytes.
+    # Keep the original bytes for conflict checks, the backup and exact restoration.
+    if product == "antigravity" and data == b"":
+        data = b'{"mcpServers": {}}'
+    return transform(data, kind, entry, allow_new_section=product in NEW_SECTION_CLIENTS)
+
+
 def apply(product, path, kind, root, expected):
-    data = read_config(path)
+    new_profile = product == "dsh" and not path.exists()
+    data = client_bytes(product, path)
     if sha(data) != expected:
         raise ValueError("Client configuration differs from the reviewed SHA-256")
     entry = expected_entry(root, product)
-    updated, names, changed = transform(data, kind, entry, allow_new_section=product in NEW_SECTION_CLIENTS)
+    updated, names, changed = registered_bytes(product, data, kind, entry)
+    if product == "dsh":
+        updated = original_dsh_profile(updated, root, prepare=True)
+        changed = updated != data
     if not changed:
         return {**inspect(product, path, kind, root), "changed": False}
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:10]
@@ -214,13 +307,18 @@ def apply(product, path, kind, root, expected):
         os.fsync(stream.fileno())
     if sha(backup.read_bytes()) != expected:
         raise ValueError("Original byte backup could not be verified")
-    replace_cas(path, updated, expected)
+    if new_profile:
+        publish_profile(path, None, updated)
+    else:
+        replace_cas(path, updated, expected)
     receipt = {"schema": 1, "product": product, "path": str(path), "format": kind,
                "time_utc": datetime.now(UTC).isoformat(), "changed": True,
                "before_sha256": expected, "after_sha256": sha(updated),
                "backup_path": str(backup), "backup_sha256": sha(data),
                "server_names": names, "xdev_entry": entry,
                "other_semantics_preserved": True, "host_client_reload": "not_requested_or_verified"}
+    if new_profile:
+        receipt["created_profile"] = True
     directory = root / "state" / "client-rollouts"
     directory.mkdir(exist_ok=True)
     receipt_path = directory / (stamp + "-" + product + ".json")
@@ -242,7 +340,13 @@ def restore(receipt_path):
     data = read_config(backup)
     if sha(data) != receipt["before_sha256"] or sha(data) != receipt["backup_sha256"]:
         raise ValueError("The original backup checksum does not match")
-    replace_cas(path, data, receipt["after_sha256"])
+    if receipt.get("created_profile") and receipt["product"] == "dsh" and data == b"":
+        current = read_config(path)
+        if sha(current) != receipt["after_sha256"]:
+            raise ValueError("The new DSH profile has since changed")
+        publish_profile(path, current, None)
+    else:
+        replace_cas(path, data, receipt["after_sha256"])
     return {"restored": True, "product": receipt["product"], "path": str(path), "sha256": sha(data)}
 
 
@@ -266,8 +370,8 @@ async def verify(product, path, kind, root, peer):
                     initialization = await session.initialize()
                     tools = await session.list_tools()
                     names = sorted(tool.name for tool in tools.tools)
-                    if len(names) != 6 or "xdev_who" not in names:
-                        raise ValueError("Expected the installed six-tool MCP catalog")
+                    if names != sorted(installed_tools(root)):
+                        raise ValueError("MCP catalog differs from the active xdev release")
                     report.update(protocol=initialization.protocolVersion, tools=names)
                     report["identities"] = []
                     for host in ["local", peer]:

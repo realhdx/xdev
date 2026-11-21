@@ -11,6 +11,28 @@ import clients
 
 
 class ClientRegistration(unittest.TestCase):
+    def test_antigravity_zero_byte_profile_round_trip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "launch.py").touch()
+            (root / "state").mkdir()
+            path = root / "mcp_config.json"
+            path.touch()
+            plan = clients.inspect("antigravity", path, "json", root)
+            self.assertEqual(plan["server_names"], [])
+            self.assertEqual(plan["sha256"], clients.sha(b""))
+            receipt = clients.apply("antigravity", path, "json", root, plan["sha256"])
+            self.assertEqual(list(json.loads(path.read_bytes())["mcpServers"]), ["xdev"])
+            repeat = clients.apply("antigravity", path, "json", root, receipt["after_sha256"])
+            self.assertFalse(repeat["changed"])
+            clients.restore(Path(receipt["receipt_path"]))
+            self.assertEqual(path.read_bytes(), b"")
+            for invalid in (b" ", b"{", b"// user settings"):
+                path.write_bytes(invalid)
+                with self.assertRaises(ValueError):
+                    clients.apply("antigravity", path, "json", root, clients.sha(invalid))
+                self.assertEqual(path.read_bytes(), invalid)
+
     @unittest.skipUnless(os.name == "nt", "Windows file sharing")
     def test_short_windows_lock_retries_only_while_original_still_matches(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -91,6 +113,38 @@ class ClientRegistration(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "JSONC"):
                 clients.apply("vscode", path, "json-servers", root, clients.sha(text))
             self.assertEqual(path.read_bytes(), text)
+
+    def test_copilot_catalog_tracks_active_release_and_preserves_custom_tools(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "launch.py").touch()
+            (root / "state").mkdir()
+            digest = "a" * 64
+            (root / "current.txt").write_text(digest + "\n", encoding="ascii")
+            identity = root / "releases" / digest / "src/product.json"
+            identity.parent.mkdir(parents=True)
+            identity.write_text(json.dumps({"product": "xdev", "version": "1.0.3"}))
+            config = root / "copilot.json"
+            original = clients.expected_entry(root, "copilot")
+            self.assertEqual(original["tools"], list(clients.BASE_TOOLS))
+            (root / "current.txt").write_text(digest + "\n" + "b" * 64 + "\n", encoding="ascii")
+            self.assertEqual(clients.installed_tools(root), clients.BASE_TOOLS)
+            data = json.dumps({"mcpServers": {"xdev": original, "keep": {"command": "keep"}}}).encode()
+            config.write_bytes(data)
+            identity.write_text(json.dumps({"product": "xdev", "version": "1.1.0-preview.1"}))
+            report = clients.inspect("copilot", config, "json", root)
+            self.assertFalse(report["xdev_exact"])
+            self.assertEqual(report["server_names"], ["xdev", "keep"])
+            receipt = clients.apply("copilot", config, "json", root, report["sha256"])
+            actual = json.loads(config.read_bytes())["mcpServers"]
+            self.assertEqual(actual["xdev"]["tools"], [*original["tools"], "xdev_surface"])
+            self.assertEqual(actual["keep"], {"command": "keep"})
+            clients.restore(Path(receipt["receipt_path"]))
+            self.assertEqual(config.read_bytes(), data)
+            original["tools"] = ["xdev_who"]
+            config.write_text(json.dumps({"mcpServers": {"xdev": original}}))
+            with self.assertRaisesRegex(ValueError, "unlike"):
+                clients.inspect("copilot", config, "json", root)
 
     def test_config_roots_and_codebuddy_priority(self):
         with tempfile.TemporaryDirectory() as directory:

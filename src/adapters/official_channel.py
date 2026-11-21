@@ -28,7 +28,8 @@ from src.runtime import local_ipc, messages, transport
 CLIENTS = ("claude", "workbuddy")
 ROUTING_CLIENTS = {"claude": "claude-channel", "workbuddy": "codebuddy-channel"}
 SCHEMA = "xdev.official-channel.v1"
-MAIL_ACTIONS = ("send", "inbox", "list", "wait", "receipt", "read", "reply", "forward", "whoami")
+MAIL_ACTIONS = ("send", "inbox", "list", "wait", "receipt", "read", "reply", "forward", "whoami",
+                "preflight", "availability", "report", "status", "recall", "replace", "correct")
 
 
 def _session(value):

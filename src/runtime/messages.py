@@ -14,13 +14,13 @@ import sys
 import tempfile
 import time
 import unicodedata
-from contextlib import closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PureWindowsPath
 from urllib.parse import urlsplit
 
 from src.runtime import transport
-from src.runtime.device_names import UnknownDeviceError, valid_name
+from src.runtime.device_names import UnknownDeviceError, github_mailbox_config, valid_name
 from src.runtime.subjects import normalize_subject, preview_subject
 
 
@@ -74,10 +74,18 @@ def _database(root):
                                       ("sender_endpoint", "TEXT"),
                                       ("sender_identity_source", "TEXT NOT NULL DEFAULT 'unknown'"),
                                       ("recipient_identity", "TEXT"), ("read_by_endpoint", "TEXT"),
-                                      ("letter_attachment", "TEXT"), ("group_json", "TEXT"), ("subject", "TEXT")):
+                                      ("letter_attachment", "TEXT"), ("group_json", "TEXT"), ("subject", "TEXT"),
+                                      ("withdrawn_at", "TEXT"), ("withdrawn_digest", "TEXT"), ("replacement_id", "TEXT"),
+                                      ("archive_digest", "TEXT"), ("archive_summary", "TEXT"),
+                                      ("communication_intent", "TEXT")):
                 if name not in columns:
                     db.execute(f"ALTER TABLE messages ADD COLUMN {name} {declaration}")
             db.execute("CREATE INDEX IF NOT EXISTS replies ON messages(reply_to, seq)")
+            # A read from an already running older version cannot undo a recall.
+            db.execute("""CREATE TRIGGER IF NOT EXISTS no_read_after_recall
+                       BEFORE UPDATE OF read_at ON messages WHEN OLD.withdrawn_at IS NOT NULL
+                       AND NEW.read_at IS NOT NULL AND OLD.read_at IS NULL
+                       BEGIN SELECT RAISE(ABORT,'This letter was recalled'); END""")
             # A still-open client can be running the previous release against
             # this same database. Its device-only UPDATE must not mark new chat mail read.
             db.execute("""CREATE TRIGGER IF NOT EXISTS require_chat_reader_v2
@@ -240,7 +248,8 @@ def _identity_source(payload, sender_endpoint):
 
 _ENVELOPE_COLUMNS = ("id", "sender", "recipient", "text", "reply_to", "kind", "reply_endpoint",
                      "recipient_endpoint", "envelope_version", "sender_endpoint",
-                     "sender_identity_source", "recipient_identity", "letter_attachment", "group_json", "subject")
+                     "sender_identity_source", "recipient_identity", "letter_attachment", "group_json", "subject",
+                     "communication_intent")
 
 
 def _letter_field(name, value, *, root=None):
@@ -345,11 +354,14 @@ def _envelope(payload, *, root=None):
     version_fields = {"sender_endpoint", "sender_identity_source", "recipient_identity"}
     if not isinstance(payload, dict) or payload.keys() - version_fields - {
             "envelope_version", "id", "from", "to", "text", "reply_to", "kind", "reply_endpoint", "recipient_endpoint",
-            "letter_attachment", "group", "subject"}:
+            "letter_attachment", "group", "subject", "communication_intent"}:
         raise ValueError("unknown message envelope fields")
     # Old wire senders did not distinguish replies from messages. The CLI supplies
     # its explicit reply default; replaying a legacy envelope must remain compatible.
     kind = _kind(payload.get("kind", "message"))
+    intent = payload.get("communication_intent")
+    if intent is not None and (intent not in ("inform", "invite", "request_reply", "request_action") or kind == "receipt"):
+        raise ValueError("Supply a supported communication intent for a message or reply")
     reply_to = _string(payload, "reply_to", optional=True)
     if kind in {"reply", "receipt"} and reply_to is None:
         raise ValueError("reply and receipt messages require reply_to")
@@ -359,7 +371,7 @@ def _envelope(payload, *, root=None):
     version = _integer(payload, "envelope_version", 2 if version_fields.intersection(payload) else 1, 1, 2)
     if version == 1 and version_fields.intersection(payload):
         raise ValueError("version 1 envelopes cannot contain chat identity fields")
-    if version != 2 and any(payload.get(key) is not None for key in ("letter_attachment", "group", "subject")):
+    if version != 2 and any(payload.get(key) is not None for key in ("letter_attachment", "group", "subject", "communication_intent")):
         raise ValueError("letter attachments, groups and subjects require envelope version 2")
     subject = normalize_subject(payload["subject"]) if payload.get("subject") is not None else None
     sender = _string(payload, "from")
@@ -412,15 +424,20 @@ def _envelope(payload, *, root=None):
         _json_field(attachment),
         _json_field(group),
         subject,
+        intent,
     )
 
 
 def _message(row, root=None):
     result = dict(row)
+    result.pop("withdrawn_digest", None)
+    archive_summary = result.pop("archive_summary", None)
+    if result.pop("archive_digest", None):
+        result["content_archived"] = True
     result["from"] = result.pop("sender")
     result["to"] = result.pop("recipient")
     if result["subject"] is None:
-        result["subject_preview"] = preview_subject(result["text"])
+        result["subject_preview"] = archive_summary if result.get("content_archived") and archive_summary else preview_subject(result["text"])
     for field in ("reply_endpoint", "recipient_endpoint"):
         original = result.get(field)
         binding = result.pop("bound_" + field, None)
@@ -453,9 +470,14 @@ def _message(row, root=None):
     return result
 
 
+_MESSAGE_FROM = " FROM messages m LEFT JOIN message_routes r ON r.message_id = m.id"
 _SELECT_MESSAGES = """SELECT m.*,
-    r.reply_endpoint AS bound_reply_endpoint, r.recipient_endpoint AS bound_recipient_endpoint
-    FROM messages m LEFT JOIN message_routes r ON r.message_id = m.id"""
+    r.reply_endpoint AS bound_reply_endpoint, r.recipient_endpoint AS bound_recipient_endpoint""" + _MESSAGE_FROM
+_SELECT_NOTICES = """SELECT m.seq, m.id, m.subject, m.kind, m.reply_to, m.communication_intent, m.sender AS 'from', m.recipient AS 'to',
+    m.sender_endpoint, COALESCE(m.recipient_identity,m.recipient_endpoint,r.recipient_endpoint) AS recipient_identity,
+    m.received_at, CASE WHEN m.subject IS NULL THEN COALESCE(m.archive_summary,substr(m.text,1,128)) END AS preview,
+    json_extract(CASE WHEN json_valid(m.letter_attachment) THEN m.letter_attachment END,'$.original.id') AS original_id,
+    json_extract(CASE WHEN json_valid(m.group_json) THEN m.group_json END,'$.id') AS group_id""" + _MESSAGE_FROM
 
 
 def _stored_message(db, identifier):
@@ -527,6 +549,9 @@ def resolve_reply_route(root, reply_to, *, kind="reply", recipient=None):
     with _database(root) as db:
         row = _stored_message(db, identifier)
     message = _message(row, root) if row is not None else {}
+    if message.get("withdrawn_at"):
+        return {"ok": False, "status": "recalled", "notify": False, "source_message_id": identifier,
+                "error_code": "MESSAGE_RECALLED", "replacement_id": message.get("replacement_id")}
     endpoint = message.get("reply_endpoint")
     callback_is_chat = endpoint is not None and endpoint.get("channel") != "tool_result"
     identities = {"original_envelope_version": message.get("envelope_version", 1),
@@ -567,7 +592,8 @@ def resolve_reply_route(root, reply_to, *, kind="reply", recipient=None):
             "source_kind": message["kind"], "notify_endpoint": endpoint,
             "return_endpoint": message["recipient_endpoint"],
             "return_binding_required": message["recipient_endpoint"] is None,
-            "bidirectional_ready": message["recipient_endpoint"] is not None,
+            "return_address_known": message["recipient_endpoint"] is not None,
+            "bidirectional_ready": None if message["recipient_endpoint"] else False,
             "evidence": "stored_callback_address_not_session_admission"}
 
 
@@ -603,8 +629,9 @@ def _deliver(root, payload):
         saved = db.execute(
             """INSERT INTO messages(id, sender, recipient, text, reply_to, kind,
                                     reply_endpoint, recipient_endpoint, envelope_version, sender_endpoint,
-                                    sender_identity_source, recipient_identity, letter_attachment, group_json, subject, received_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING""",
+                                    sender_identity_source, recipient_identity, letter_attachment, group_json, subject,
+                                    communication_intent, received_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING""",
             (*envelope, _timestamp()),
         ).rowcount == 1
         row = _stored_message(db, envelope[0])
@@ -626,6 +653,25 @@ def _check_replay(db, stored, incoming, root):
     # An old client can retry an anonymous message across upgrades. Version and
     # evidence describe the initial write. Neither can rewrite who authored it.
     from src.runtime.correspondence import plan_group
+    if (incoming["communication_intent"] is not None and stored["communication_intent"] is not None
+            and stored["communication_intent"] != incoming["communication_intent"]):
+        raise ValueError(f"message id {incoming['id']} already exists with different communication intent")
+    if stored["withdrawn_at"]:
+        from src.runtime.mail_lifecycle import removed_digest
+        original_subject = incoming["subject"]
+        if stored["withdrawn_digest"] != removed_digest(incoming):
+            # An old untitled letter may be retried with its generated headline. Verify the
+            # erased original first, then let the normal subject compatibility rules below run.
+            if stored["withdrawn_digest"] != removed_digest({**incoming, "subject": None}):
+                raise ValueError(f"message id {incoming['id']} already exists with different content")
+            original_subject = None
+        stored = {**dict(stored), "text": incoming["text"], "letter_attachment": incoming["letter_attachment"],
+                  "subject": original_subject}
+    elif "archive_digest" in stored.keys() and stored["archive_digest"]:
+        from src.runtime.mail_retention import content_digest
+        if content_digest(incoming["text"], incoming["letter_attachment"]) != stored["archive_digest"]:
+            raise ValueError(f"message id {incoming['id']} already exists with different content")
+        stored = {**dict(stored), "text": incoming["text"], "letter_attachment": incoming["letter_attachment"]}
     keys = ("id", "text", "reply_to", "kind", "letter_attachment")
     def same_endpoint(a, b):
         return a == b or (a is not None and b is not None and matches_participant(
@@ -656,10 +702,14 @@ def _check_replay(db, stored, incoming, root):
     raise ValueError(f"message id {incoming['id']} already exists with different content")
 
 
-def _query(root, payload, limit, *, summarize_attachments=False):
+def _query(root, payload, limit, *, summarize_attachments=False, notices=False, watermark=False):
     after = _integer(payload, "after", 0, 0, 2**63 - 1)
     conditions = ["seq > ?"]
     values = [after]
+    if notices or watermark:
+        conditions.append("m.kind != 'receipt'")
+    if notices or watermark or payload.get("unread_only") or payload.get("substantive_only"):
+        conditions.append("m.withdrawn_at IS NULL")
     unread_only = payload.get("unread_only", False)
     if type(unread_only) is not bool:
         raise ValueError("unread_only must be a boolean")
@@ -719,8 +769,24 @@ def _query(root, payload, limit, *, summarize_attachments=False):
     where = " AND ".join(conditions)
     messages = []
     with _database(root) as db:
-        rows = db.execute(_SELECT_MESSAGES + f" WHERE {where} ORDER BY seq LIMIT ?", (*values, limit))
+        if watermark:
+            newest = db.execute("SELECT MAX(m.seq)" + _MESSAGE_FROM + f" WHERE {where}", values).fetchone()[0]
+            return {"messages": [], "cursor": newest if newest is not None else after}
+        selected = _SELECT_NOTICES if notices else _SELECT_MESSAGES
+        rows = db.execute(selected + f" WHERE {where} ORDER BY seq LIMIT ?", (*values, limit))
         for row in rows:
+            if notices:
+                item = dict(row)
+                preview = item.pop("preview")
+                if item["subject"] is None:
+                    item["subject"] = preview_subject(preview or "")
+                for field in ("sender_endpoint", "recipient_identity"):
+                    try:
+                        item[field] = normalize_participant(json.loads(item[field])) if item[field] else None
+                    except (TypeError, ValueError):
+                        item[field] = None
+                messages.append(item)
+                continue
             item = _message(row, root)
             if summarize_attachments and item["letter_attachment"] is not None:
                 attachment = item.pop("letter_attachment")
@@ -808,24 +874,67 @@ def _timeout(payload):
     return timeout
 
 
-def _wait(root, payload):
-    timeout = _timeout(payload)
+def _await_inbox(root, timeout, scan, *, on_empty=None):
     end = time.monotonic() + timeout
     if timeout == 0:
-        found = _query(root, payload, 1)
-    else:
-        # Register before querying so delivery cannot fall between the read and watch setup.
-        with _watch(_wake_directory(root)) as wait_for_change:
-            while True:
-                found = _query(root, payload, 1)
+        return scan()
+    # Register first so commits between a scan and sleeping cannot be missed.
+    with _watch(_wake_directory(root)) as wait_for_change, ExitStack() as pending:
+        while True:
+            found = scan()
+            remaining = end - time.monotonic()
+            if found["messages"] or remaining <= 0:
+                return found
+            if on_empty is not None:
+                pending.enter_context(on_empty(remaining))
+                on_empty = None
                 remaining = end - time.monotonic()
-                if found["messages"] or remaining <= 0:
-                    break
-                if not wait_for_change(remaining):
-                    found = _query(root, payload, 1)
-                    break
+                if remaining <= 0:
+                    return scan()
+            if not wait_for_change(remaining):
+                return scan()  # a committed delivery can survive a lost filesystem pulse
+
+
+def _wait(root, payload):
+    found = _await_inbox(root, _timeout(payload), lambda: _query(root, payload, 1))
     return {"status": "received" if found["messages"] else "timeout",
             "message": next(iter(found["messages"]), None), "cursor": found["cursor"]}
+
+
+def wait_inbox(root, payload):
+    """One local original-chat wait. Reading these summaries never acknowledges a letter."""
+    recipient = normalize_participant(payload.get("recipient_endpoint"))
+    if recipient is None or not _same_device(recipient["device"], transport.node(root), root):
+        raise ValueError("Inbox waiting requires an exact local recipient chat")
+    timeout = _timeout(payload)
+    if timeout > 60:
+        raise ValueError("Inbox wait must be within 0 to 60 seconds")
+    limit = _integer(payload, "limit", 25, 1, 100)
+    filters = {**payload, "recipient_endpoint": recipient, "exact_profiles": True}
+
+    def scan():
+        if "after" not in filters:
+            # Take the scoped watermark first. If there is no unread backlog, every
+            # commit after this snapshot remains eligible, including a racing read.
+            start = _query(root, {**filters, "unread_only": False}, 1, watermark=True)["cursor"]
+            unread = _query(root, {**filters, "unread_only": True}, limit, notices=True)
+            if unread["messages"]:
+                return unread
+            filters["after"] = start
+        return _query(root, filters, limit, notices=True)
+
+    extra = {}
+
+    @contextmanager
+    def waiting(remaining):
+        from src.runtime import github_demand
+        with github_demand.request(root, remaining) as signal:
+            if signal:
+                extra["github_poll_demand"] = signal
+            yield
+
+    found = _await_inbox(root, timeout, scan, on_empty=waiting)
+    return {"ok": True, "status": "received" if found["messages"] else "timeout", **found, **extra}
 
 
 def _receipt(root, payload):
@@ -846,9 +955,12 @@ def _receipt(root, payload):
             return {"ok": False, "status": "requires_reader_binding", "id": id_,
                     "error_code": "READER_SESSION_REQUIRED", "recipient_identity": target}
         if reader is not None and (not _same_device(reader["device"], row["recipient"], root) or
-                                   (target and not matches_participant(reader, target, root=root))):
+                                   (target and not matches_participant(reader, target, exact=message["envelope_version"] >= 2, root=root))):
             return {"ok": False, "status": "reader_session_conflict", "id": id_,
                     "error_code": "READER_SESSION_MISMATCH", "recipient_identity": target}
+        if row["withdrawn_at"]:
+            return {"ok": False, "status": "recalled", "id": id_, "withdrawn_at": row["withdrawn_at"],
+                    "replacement_id": row["replacement_id"], "error_code": "MESSAGE_RECALLED"}
         # Keep the first acknowledgment immutable, including a legacy device-only read.
         db.execute("UPDATE messages SET read_at = ?, read_by_endpoint = ? WHERE id = ? AND read_at IS NULL",
                    (_timestamp(), _participant_wire(reader), id_))
@@ -894,6 +1006,8 @@ async def _listen(root, js, device, payload, timeout_error):
                 envelope = json.loads(received.data)
                 if not isinstance(envelope, dict) or not valid_name(envelope.get("to")) or not directory.same(envelope["to"], device):
                     raise ValueError("message recipient does not match this device")
+                if not legacy_broker_allowed(root, envelope.get("from")):
+                    raise ValueError("The paired sender requires an encrypted mail transport")
                 result = await asyncio.to_thread(_deliver, root, envelope)
             except (UnicodeError, ValueError, sqlite3.IntegrityError):
                 await received.term()
@@ -905,14 +1019,32 @@ async def _listen(root, js, device, payload, timeout_error):
     return {"status": "completed" if len(results) == limit else "timeout", "results": results}
 
 
+def legacy_broker_allowed(root, peer):
+    config = transport.config(root)
+    devices = transport.directory(root)
+    private_carriers = (config.get("managed_queue") or {}, github_mailbox_config(config) or {})
+    relays = (config.get("session_relay") or {}).get("peers", {})
+    try:
+        managed = devices.mail_transport(peer) in {"sqs", "github"}
+    except UnknownDeviceError:
+        managed = False
+    if managed or any(devices.same(name, peer) for carrier in private_carriers for name in carrier.get("peers", {})):
+        return False
+    return not any(devices.same(name, peer) and record.get("encryption") == "required"
+                   for name, record in relays.items())
+
+
 async def _broker(root, action, payload):
+    from src.runtime.mail_routes import NotSubmitted
+    if action == "publish" and not legacy_broker_allowed(root, payload.get("to")):
+        raise ValueError("This peer requires a sealed relay. Choose direct, an encrypted relay, sqs or github.")
     try:
         import nats
         from nats.errors import Error as NatsError
         from nats.errors import TimeoutError as NatsTimeoutError
         from nats.js.errors import NotFoundError
     except ImportError as exc:
-        raise RuntimeError("broker actions require the optional nats-py package") from exc
+        raise NotSubmitted("broker actions require the optional nats-py package") from exc
 
     config = transport.config(root)
     settings = config.get("broker")
@@ -924,6 +1056,10 @@ async def _broker(root, action, payload):
     if address.scheme not in {"nats", "tls"} or not address.hostname or address.username is not None:
         raise ValueError("broker.url must be a nats:// or tls:// address without credentials")
     async def report_client_error(exc):
+        nonlocal denied
+        import ssl
+        if isinstance(exc, ssl.SSLError) or "permission" in str(exc).lower() or "authorization" in str(exc).lower():
+            denied = True
         logging.getLogger(__name__).debug("NATS client error: %s", type(exc).__name__)
 
     options = {"servers": [settings["url"]], "connect_timeout": 3, "max_reconnect_attempts": 2,
@@ -933,7 +1069,7 @@ async def _broker(root, action, payload):
 
     if action == "publish":
         (id_, actor, recipient, message, reply_to, kind, reply_wire, recipient_wire,
-         version, author_wire, source, destination_wire, attachment_wire, group_wire, subject) = _envelope(mail_payload(root, payload), root=root)
+         version, author_wire, source, destination_wire, attachment_wire, group_wire, subject, intent) = _envelope(mail_payload(root, payload), root=root)
         directory = transport.directory(root)
         if not valid_name(actor) or not directory.same(actor, device):
             raise ValueError("broker publication sender must match this device")
@@ -943,6 +1079,8 @@ async def _broker(root, action, payload):
                     "reply_endpoint": json.loads(reply_wire) if reply_wire is not None else None,
                     "recipient_endpoint": json.loads(recipient_wire) if recipient_wire is not None else None}
         if version == 2:
+            if intent is not None:
+                envelope["communication_intent"] = intent
             envelope.update(envelope_version=version, sender_identity_source=source,
                             sender_endpoint=json.loads(author_wire) if author_wire is not None else None,
                             recipient_identity=json.loads(destination_wire) if destination_wire is not None else None)
@@ -956,6 +1094,8 @@ async def _broker(root, action, payload):
         wire = json.dumps(envelope, ensure_ascii=False, sort_keys=True).encode("utf-8")
 
     connection = None
+    publishing = False
+    denied = False
     try:
         connection = await nats.connect(**options)
         js = connection.jetstream()
@@ -972,12 +1112,19 @@ async def _broker(root, action, payload):
 
         # JetStream deduplicates publications, not content conflicts. Hash the canonical wire
         # so different content sharing an ID still gets checked against the recipient inbox.
+        publishing = True
         ack = await js.publish(topic, wire, stream=_STREAM,
                                headers={"Nats-Msg-Id": hashlib.sha256(wire).hexdigest()})
         return {"status": "broker_acknowledged", "recipient_inbox": "unconfirmed", "id": id_, "stream": ack.stream,
                 "stream_seq": ack.seq, "duplicate": bool(ack.duplicate)}
     except (NatsError, TimeoutError, ConnectionError) as exc:
-        raise RuntimeError(f"JetStream {action} was not confirmed ({type(exc).__name__})") from exc
+        from nats import errors
+        if denied or isinstance(exc, errors.AuthorizationError):
+            raise ValueError("The broker denied this device's credentials or permissions") from exc
+        before_publish = action == "publish" and not publishing
+        transient = isinstance(exc, (TimeoutError, ConnectionError, errors.NoServersError, errors.ConnectionClosedError))
+        failure = NotSubmitted if before_publish and transient else RuntimeError
+        raise failure(f"JetStream {action} was not confirmed ({type(exc).__name__})") from exc
     finally:
         if connection is not None:
             await connection.close()
@@ -985,7 +1132,7 @@ async def _broker(root, action, payload):
 
 def _acknowledgement_hint(result, items):
     unread = [item["id"] for item in items
-              if item and item["read_at"] is None and item.get("kind", "message") != "receipt"]
+              if item and item["read_at"] is None and not item.get("withdrawn_at") and item.get("kind", "message") != "receipt"]
     if unread:
         result["unread_ids"] = unread
         result["ack_first_protocol"] = (

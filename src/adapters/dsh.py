@@ -21,7 +21,7 @@ import tempfile
 import time
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
-from src.runtime import local_ipc, messages
+from src.runtime import local_ipc, messages, transport
 
 
 PROTOCOL = 1
@@ -206,7 +206,7 @@ def _read(path, maximum=65536):
     return path.read_bytes()
 
 
-def _binding(root, session):
+def _live_bindings(root):
     override = os.environ.get("XDEV_DSH_BRIDGE")
     paths = [Path(override) / "binding.json"] if override else list((root / "state/dsh").glob("*/binding.json"))
     if len(paths) > 32:
@@ -216,7 +216,7 @@ def _binding(root, session):
         try:
             row = json.loads(_read(path, 16384))
             if (not isinstance(row, dict) or row.get("protocol") != PROTOCOL
-                    or row.get("backend") != "dsh_same_host_plugin" or session not in row.get("sessions", [])):
+                    or row.get("backend") != "dsh_same_host_plugin" or not isinstance(row.get("sessions"), list)):
                 continue
             if (not isinstance(row.get("profile"), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", row["profile"])
                     or not isinstance(row.get("token"), str) or not re.fullmatch(r"[a-f0-9]{64}", row["token"])
@@ -227,9 +227,41 @@ def _binding(root, session):
             found.append({**row, "directory": path.parent})
         except (OSError, ValueError, TypeError):
             continue
+    return found
+
+
+def _binding(root, session, preferred_profile=None):
+    live = _live_bindings(root)
+    exact = [row for row in live if session in row["sessions"]]
+    automatic = [row for row in live if row.get("discovery") == "active_original"]
+    if preferred_profile:
+        found = [row for row in exact + automatic if row["profile"] == preferred_profile]
+    else:
+        found = exact or automatic
     if len(found) > 1:
         raise ValueError("Ambiguous DSH profile: several live bridges bind the same exact session")
     return found[0] if found else None
+
+
+def _missing_receiver(root, session):
+    live = bool(_live_bindings(root))
+    command = "Run the xdev DSH client installer on the receiving device to enable automatic original-chat discovery."
+    return {"bound": False, "session": session,
+            "error_code": "DSH_SESSION_NOT_BOUND" if live else "DSH_RECEIVER_NOT_LOADED",
+            "binding_state": "unlisted_in_live_receiver" if live else "no_live_receiver",
+            "next_action": command,
+            "optional_scoped_command": "py -3.14 -B deploy/dsh_roots.py --session " + session + " --apply"}
+
+
+def receiver_binding(root, session):
+    """Check the original host's current binding without sending a prompt or returning credentials."""
+    session = canonical_session(session)
+    binding = _binding(root, session)
+    if binding is not None:
+        if binding.get("discovery") == "active_original":
+            return {"bound": True, "session": session, "binding_state": "host_checks_exact_active_original"}
+        return {"bound": True, "session": session}
+    return _missing_receiver(root, session)
 
 
 def _envelope(body, token):
@@ -327,12 +359,45 @@ def inspect(root, session):
     session = canonical_session(session)
     binding = _binding(root, session)
     if binding is None:
-        return {"ok": False, "status": "requires_activation", "session": session,
-                "error_code": "DSH_RECEIVER_NOT_LOADED"}
+        return {"ok": False, "status": "requires_activation", **_missing_receiver(root, session)}
     call_id = str(uuid4())
     result = _exchange(binding, {"op": "inspect", "profile": binding["profile"], "call_id": call_id,
                                  "session": session, "request_id": str(uuid4())}, call_id)
     return {"ok": result.get("status") == "ready", **result, "model_calls": 0}
+
+
+def _addressed_to_original(root, item, session):
+    target = item.get("recipient_endpoint") or {}
+    return (target.get("client") == "dsh" and target.get("session") == session and
+            transport.directory(root).same(target.get("device"), transport.node(root)))
+
+
+def _check_original(root, binding, item, session, request_id):
+    def check(receiver, operation):
+        call_id = str(uuid4())
+        return _exchange(receiver, {"op": operation, "profile": receiver["profile"], "call_id": call_id,
+                                    "session": session, "request_id": request_id}, call_id)
+
+    if binding.get("discovery") == "active_original":
+        return check(binding, "resolve_original")
+    checked = check(binding, "inspect")
+    if (checked.get("status") != "requires_activation" or checked.get("active") is not False or
+            checked.get("submitted") is not False or not binding.get("pid") or
+            session not in binding.get("sessions", []) or not _addressed_to_original(root, item, session)):
+        return checked
+    # The legacy plugin owns both the address and the journal. Ask the automatic
+    # receiver in that same host only to recover the writer, then use the legacy
+    # receiver for admission. Neither the request ID nor the durable route changes.
+    candidates = [row for row in _live_bindings(root) if row.get("discovery") == "active_original"
+                  and row["pid"] == binding["pid"]]
+    if not candidates:
+        return checked
+    if len(candidates) != 1:
+        return {"status": "unknown", "error_code": "DSH_AUTOMATIC_RECEIVER_AMBIGUOUS"}
+    recovered = check(candidates[0], "resolve_original")
+    if recovered.get("status") != "ready" or recovered.get("active") is not True:
+        return recovered
+    return check(binding, "inspect")
 
 
 def submit(root, identifier, session, steer=False, idle_only=False):
@@ -351,11 +416,12 @@ def submit(root, identifier, session, steer=False, idle_only=False):
                            (session, identifier)).fetchone()
     if prior and prior[2] and not steer:
         return {"ok": True, "status": "already_admitted", **receipt, "profile": prior[0], "request_id": prior[1]}
-    binding = _binding(root, session)
+    binding = _binding(root, session, prior[0]) if prior else _binding(root, session)
     if binding is None:
-        return {"ok": False, "status": "requires_activation", "error_code": "DSH_RECEIVER_NOT_LOADED",
-                **receipt, "requires_activation": True,
-                "next_action": "Enable the xdev Host receiver in the original DSH profile and bind this exact live root session; do not start a second headless or ACP writer."}
+        return {"ok": False, "status": "requires_activation", **receipt,
+                **_missing_receiver(root, session), "requires_activation": True}
+    if binding.get("discovery") == "active_original" and not _addressed_to_original(root, item, session):
+        return {"ok": False, "status": "address_mismatch", "error_code": "DSH_ORIGINAL_ADDRESS_MISMATCH", **receipt}
     features = binding.get("features", [])
     if steer and (not isinstance(features, list) or not all(isinstance(value, str) for value in features)
                   or not {"steer", "promote"}.issubset(set(features))):
@@ -382,19 +448,20 @@ def submit(root, identifier, session, steer=False, idle_only=False):
         elif row and row[4]:
             return {"ok": True, "status": "already_admitted", **receipt}
         if row is None:
-            check_id = str(uuid4())
             try:
-                checked = _exchange(binding, {"op": "inspect", "profile": binding["profile"], "call_id": check_id,
-                                             "session": session, "request_id": request_id}, check_id)
+                checked = _check_original(root, binding, item, session, request_id)
             except (OSError, ValueError, RuntimeError) as error:
                 return _unknown(receipt, error_code="DSH_BRIDGE_PREFLIGHT_UNVERIFIED", diagnostic_code=type(error).__name__,
                                 **local_ipc.diagnostics(error, stage="dsh.preflight"))
             if checked.get("active") is not True:
                 if checked.get("status") == "unknown":
                     return _unknown(receipt, error_code=checked.get("error_code", "DSH_BRIDGE_TIMEOUT"))
-                return {"ok": False, "status": "requires_activation", **receipt,
-                        "error_code": "DSH_ORIGINAL_AGENT_NOT_ACTIVE", "requires_activation": True,
-                        "next_action": "Open the exact original DSH chat in the bound profile; the adapter will not resume another writer."}
+                reason = checked.get("error_code", "DSH_ORIGINAL_AGENT_NOT_ACTIVE")
+                guidance = ("The original host could not acquire the existing writer. Check this delivery after it becomes available."
+                            if reason in {"DSH_ORIGINAL_WRITER_HELD", "DSH_ORIGINAL_AGENT_BUSY"} else
+                            "Verify the original chat still exists and is available in this DSH profile.")
+                return {"ok": False, "status": "requires_activation", **receipt, "error_code": reason,
+                        "requires_activation": True, "next_action": guidance}
             if idle_only and checked.get("running") is not False:
                 return {"ok": True, "status": "deferred_in_inbox", **receipt,
                         "observed_before_submit": "busy_or_unknown"}
@@ -405,6 +472,8 @@ def submit(root, identifier, session, steer=False, idle_only=False):
                             "steer" if steer else "queue"))
             row = db.execute("SELECT profile,directory,request_id,call_id,admitted,promotion_call_id,notification_mode FROM admissions WHERE session=? AND message_id=?",
                              (session, identifier)).fetchone()
+            if row[0] != binding["profile"] or os.path.normcase(row[1]) != os.path.normcase(str(binding["directory"])):
+                return _unknown(receipt, error_code="DSH_PROFILE_CONFLICT")
             if steer and row[6] != "steer":
                 # A simultaneous queue caller reserved this ID first. Promote
                 # that occurrence; never mutate/replay its original payload.
@@ -476,9 +545,33 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-export const inject = ['sessionController', 'agents'];
+export const inject = ['sessionController','agents'];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const sid = /^session-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+function originalHeader(header,id) {
+  return !!header && sid.test(id) && header.id===id && header.origin!=='subagent' && !header.parentSession && (header.delegationDepth??0)===0;
+}
+export function currentOriginal(ctx, id, expected) {
+  const agent=ctx.agents.get(id);
+  return (!expected||expected===agent) && originalHeader(agent?.session?.header,id);
+}
+export async function resolveAddressedOriginal(ctx, id) {
+  const blocked=code=>({status:'requires_activation',active:false,submitted:false,error_code:code});
+  const registry=ctx.get?.('workspaceRegistry'), query=ctx.get?.('sessionQuery');
+  if(!sid.test(id)||registry?.archivedSessionIds?.includes(id))return blocked('DSH_ORIGINAL_UNAVAILABLE');
+  if(ctx.agents.get(id))return currentOriginal(ctx,id)?null:blocked('DSH_NOT_ORIGINAL');
+  if(!Array.isArray(registry?.archivedSessionIds)||typeof query?.observeSession!=='function'||typeof ctx.sessionController.resolveAgent!=='function')return blocked('DSH_COLD_RESUME_UNAVAILABLE');
+  try {
+    const observed=await query.observeSession(id,{signal:AbortSignal.timeout(5000)});
+    try {
+      if(!originalHeader(observed.header,id)||!observed.header.cwd||registry.archivedSessionIds.includes(id))return blocked('DSH_ORIGINAL_UNAVAILABLE');
+      const result=await ctx.sessionController.resolveAgent(id);
+      if(result?.error) return blocked(result.error.code==='session/writer-held'?'DSH_ORIGINAL_WRITER_HELD':
+        result.error.code==='session/agent-busy'?'DSH_ORIGINAL_AGENT_BUSY':'DSH_ORIGINAL_UNAVAILABLE');
+      return result?.agent&&currentOriginal(ctx,id,result.agent)&&!registry.archivedSessionIds.includes(id)?null:blocked('DSH_ORIGINAL_UNAVAILABLE');
+    } finally {observed[Symbol.dispose]();}
+  } catch {return blocked('DSH_ORIGINAL_LOOKUP_UNVERIFIED');}
+}
 const mac = (text, token) => crypto.createHmac('sha256', Buffer.from(token, 'hex')).update(text).digest('hex');
 async function atomic(file, value) { const tmp = file + '.tmp-' + crypto.randomUUID(); await fs.writeFile(tmp, JSON.stringify(value), {mode:0o600}); await fs.rename(tmp,file); }
 async function json(file) { const st=await fs.lstat(file); if(!st.isFile()||st.isSymbolicLink()||st.size>65536) throw Error('invalid bridge file'); return JSON.parse(await fs.readFile(file,'utf8')); }
@@ -509,11 +602,11 @@ function existingPlacement(agent,state,requestId) {
   return {status:history.admitted?'not_pending':'unknown',original_admitted:history.admitted,error_code:history.admitted?'DSH_NATIVE_ITEM_NO_LONGER_PENDING':'DSH_NATIVE_REQUEST_NOT_OBSERVED'};
 }
 export async function promoteExisting(ctx,req,agent,state) {
-  if(ctx.agents.get(req.session)!==agent||agent.session?.header?.id!==req.session||agent.session.header.origin==='subagent')return {status:'requires_activation',submitted:false};
+  if(!currentOriginal(ctx,req.session,agent))return {status:'requires_activation',submitted:false};
   let observed=existingPlacement(agent,state,req.request_id);
   if(observed.status!=='queued')return observed;
   if(state.running!==true)return {status:'steer_unavailable',error_code:'DSH_STEER_UNAVAILABLE',item_id:observed.item_id,original_admitted:true};
-  if(ctx.agents.get(req.session)!==agent||agent.session?.header?.id!==req.session||agent.session.header.origin==='subagent')return {status:'requires_activation',submitted:false};
+  if(!currentOriginal(ctx,req.session,agent))return {status:'requires_activation',submitted:false};
   try {
     const answer=await ctx.sessionController.updateQueue({sessionId:req.session,itemId:observed.item_id,action:{kind:'steer'}});
     if(answer?.accepted!==true)return {status:'unknown',error_code:'DSH_PROMOTION_ACK_UNVERIFIED'};
@@ -606,8 +699,8 @@ export async function prepareBridge(dir,profile,pythonExecutable) {
   }
 }
 export async function startReceiver(ctx, config) {
-  const dir=config.bridgeDirectory, profile=config.profile, sessions=config.sessions;
-  if(!path.isAbsolute(dir)||!/^[A-Za-z0-9_-]{1,64}$/.test(profile)||!Array.isArray(sessions)||!sessions.length||sessions.some(s=>!sid.test(s))) throw Error('invalid receiver binding');
+  const dir=config.bridgeDirectory, profile=config.profile, sessions=config.sessions, automatic=config.discovery==='active_original';
+  if(!path.isAbsolute(dir)||!/^[A-Za-z0-9_-]{1,64}$/.test(profile)||!Array.isArray(sessions)||(!sessions.length&&!automatic)||sessions.some(s=>!sid.test(s))) throw Error('invalid receiver binding');
   // Complete exact-user ACL setup before exposing any binding or capability.
   // OWNER RIGHTS alone follows the elevated SSH creator, not its GUI user.
   await prepareBridge(dir,profile,config.aclPython);
@@ -618,6 +711,7 @@ export async function startReceiver(ctx, config) {
   const ledgerFile=path.join(dir,'accepted.json');
   try { const saved=await json(ledgerFile); for(const [k,v] of Object.entries(saved)) accepted.set(k,v); } catch {}
   const binding={protocol:1,backend:'dsh_same_host_plugin',profile,sessions,pid:process.pid,host_id:hostId,token,
+    ...(automatic?{discovery:'active_original'}:{}),
     features:['inspect_queue','steer','promote']};
   await atomic(bindingFile,binding);
   function toolsOf(agent) {
@@ -632,7 +726,7 @@ export async function startReceiver(ctx, config) {
     const cached=accepted.get(key); if(cached) {if(cached.hash!==hash) throw Error('request conflict'); return cached.value;}
     if(pending.has(key)) return pending.get(key);
     const work=(async()=>{
-      if(ctx.agents.get(req.session)!==agent||agent.session?.header?.id!==req.session||agent.session.header.origin==='subagent') return {status:'requires_activation',submitted:false};
+      if(!currentOriginal(ctx,req.session,agent)) return {status:'requires_activation',submitted:false};
       const answer=await ctx.sessionController.prompt({sessionId:req.session,requestId:req.request_id,mode:req.mode,content:[{type:'text',text:req.notice}]},AbortSignal.timeout(5000));
       if(answer?.accepted!==true) return {status:'unknown',error_code:'DSH_NATIVE_ACK_UNVERIFIED'};
       const value={status:'accepted',accepted:true,api:'sessionController.prompt',host_id:hostId,observed_running:state.running};
@@ -645,12 +739,18 @@ export async function startReceiver(ctx, config) {
     try {
       const envelope=await json(input); if(typeof envelope.body!=='string'||! /^[a-f0-9]{64}$/.test(envelope.mac||'')||!crypto.timingSafeEqual(Buffer.from(envelope.mac,'hex'),Buffer.from(mac(envelope.body,token),'hex'))) return;
       const req=JSON.parse(envelope.body);
-      if(req.call_id+'.json'!==name||req.profile!==profile||!sessions.includes(req.session)||!uuid.test(req.request_id)||!['inspect','notify','promote'].includes(req.op)) return;
+      if(req.call_id+'.json'!==name||req.profile!==profile||!sid.test(req.session)||(!automatic&&!sessions.includes(req.session))||!uuid.test(req.request_id)||!['inspect','notify','promote','resolve_original'].includes(req.op)) return;
+      if(automatic&&ctx.get?.('workspaceRegistry')?.archivedSessionIds?.includes(req.session)){await reply(output,req,{status:'requires_activation',active:false,submitted:false,error_code:'DSH_ORIGINAL_UNAVAILABLE'});return;}
+      if(req.op==='resolve_original') {
+        if(!automatic)return;
+        const failure=await resolveAddressedOriginal(ctx,req.session);
+        if(failure){await reply(output,req,failure);return;}
+      }
       const agent=ctx.agents.get(req.session);
-      if(!agent||agent.session?.header?.id!==req.session||agent.session.header.origin==='subagent') {await reply(output,req,{status:'requires_activation',active:false,submitted:false});return;}
+      if(!currentOriginal(ctx,req.session,agent)) {await reply(output,req,{status:'requires_activation',active:false,submitted:false});return;}
       const state=await ctx.sessionController.state({sessionId:req.session},AbortSignal.timeout(5000));
-      if(!state.active||ctx.agents.get(req.session)!==agent) {await reply(output,req,{status:'requires_activation',active:false,submitted:false});return;}
-      if(req.op==='inspect') {await reply(output,req,{status:'ready',active:true,running:state.running,host_id:hostId,
+      if(!state.active||!currentOriginal(ctx,req.session,agent)) {await reply(output,req,{status:'requires_activation',active:false,submitted:false});return;}
+      if(req.op==='inspect'||req.op==='resolve_original') {await reply(output,req,{status:'ready',active:true,running:state.running,host_id:hostId,
         cursor:state.cursor,queue:Array.isArray(state.queue)?state.queue.map(item=>({id:item.id,placement:item.placement,...typeof item.rpcId==='string'?{rpcId:item.rpcId}:{}})):null,
         pendingInput:Array.isArray(state.pendingInput)?state.pendingInput.filter(x=>['approval','question','other'].includes(x)):[],...toolsOf(agent)});return;}
       if(req.op==='promote') {await reply(output,req,await promoteExisting(ctx,req,agent,state));return;}
@@ -671,7 +771,7 @@ export async function apply(ctx,config) { const receiver=await startReceiver(ctx
 '''
 
 
-def write_plugin_bundle(destination, bridge_directory, session_ids, profile="default"):
+def write_plugin_bundle(destination, bridge_directory, session_ids, profile="default", *, automatic=False):
     """Prepare a reviewable new local bundle; does not install or touch DSH config."""
     destination, bridge_directory = Path(destination), Path(bridge_directory)
     if destination.exists() or not destination.is_absolute() or not bridge_directory.is_absolute():
@@ -679,7 +779,7 @@ def write_plugin_bundle(destination, bridge_directory, session_ids, profile="def
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", profile):
         raise ValueError("Invalid DSH profile name")
     session_ids = [canonical_session(value) for value in session_ids]
-    if not session_ids:
+    if not session_ids and not automatic:
         raise ValueError("Bind at least one exact original DSH session")
     _prepare_bridge(bridge_directory, profile)
     destination.mkdir(parents=True, mode=0o700)
@@ -690,6 +790,8 @@ def write_plugin_bundle(destination, bridge_directory, session_ids, profile="def
     (destination / "package.json").write_text(json.dumps(package, indent=2), encoding="utf-8")
     config = {"bridgeDirectory": str(bridge_directory), "profile": profile, "sessions": session_ids,
               "aclPython": sys.executable}
+    if automatic:
+        config["discovery"] = "active_original"
     patch = "- insert:\n    - id: xdev-dsh-receiver-v2\n      name: '@local/xdev-dsh-receiver-v2'\n      config: " + json.dumps(config) + "\n"
     (destination / "cordis.patch.yml").write_text(patch, encoding="utf-8")
     (destination / "index.js").write_text(HOST_PLUGIN, encoding="utf-8")

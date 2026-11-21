@@ -28,6 +28,11 @@ def body(item, identifier, client, session, profile=None):
         topic = ""
         if item.get("subject") is not None:
             topic = f"主题 {json.dumps(normalize_subject(item['subject']), ensure_ascii=False)}。"
+        purpose = {"inform": "供知悉", "invite": "邀请交流，可自行决定是否回复",
+                   "request_reply": "发件方希望收到回复", "request_action": "发件方提出了行动请求"}.get(
+                       item.get("communication_intent"))
+        if purpose:
+            topic += purpose + "。"
         return (f"{topic}xdev 消息 {encoded}。发自 {source}，送往 {destination}。用 msg read ID 查收并登记已读。"
                 "按当前会话语言，在用户既有任务和权限内处理。实质回复用 msg reply ID --text 回复内容。"
                 "ID 取开头的消息标识。详情见邮箱或引用文件。")

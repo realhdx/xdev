@@ -14,7 +14,8 @@ def dispatch(request, root):
     if not isinstance(request, dict) or set(request) != {"session", "action", "arguments"}:
         raise ValueError("Invalid native tool request")
     action, arguments = request["action"], request["arguments"]
-    if action not in ("send", "forward", "reply", "read", "whoami", "inbox", "list", "wait", "receipt", "bind"):
+    from src.cli.contact import ACTIONS
+    if action not in ACTIONS | {"send", "forward", "reply", "read", "whoami", "inbox", "list", "wait", "receipt", "bind"}:
         raise ValueError("Invalid mailbox action")
     if not isinstance(arguments, list) or not all(isinstance(arg, str) for arg in arguments):
         raise ValueError("Pass each CLI argument as a separate string")

@@ -20,6 +20,8 @@ def _source(root, identifier, actor):
     if not actor or not transport.directory(root).same(actor["device"], source["to"]) or (source["recipient_identity"] and
             not messages.matches_participant(actor, source["recipient_identity"], root=root)):
         raise ValueError("Only the addressed chat can forward this letter or select a new audience")
+    if source.get("withdrawn_at"):
+        raise ValueError("This letter was withdrawn.")
     if source.get("letter_attachment_error") or source.get("group_error"):
         raise ValueError("The source letter has unverifiable attachments or discussion membership")
     return source
@@ -109,6 +111,21 @@ def _audience(source, choice, actor, root):
     return endpoints
 
 
+def _batch_preflight(observation):
+    if not isinstance(observation, dict):
+        return {"status": "not_recorded"}
+    fields = ("status", "source", "observed_at", "checked_at", "host_state", "adapter_state",
+              "host_xdev_version", "host_observation_stale", "observation_age_seconds",
+              "live_check", "observation_request", "next_options")
+    result = {key: observation[key] for key in fields if key in observation}
+    declaration = observation.get("declaration")
+    if isinstance(declaration, dict):
+        # The author needs the scheduling constraint. Do not put a peer's free-text reason in the batch journal.
+        result["declaration"] = {key: declaration[key] for key in ("state", "source", "observed_at", "expires_at", "expired")
+                                 if key in declaration}
+    return result
+
+
 def deliver(root, args):
     from src.cli.main import _actor, _send
     origin = transport.node(root)
@@ -171,6 +188,8 @@ def deliver(root, args):
                                 args.return_client, args.return_session, args.one_way, args.wait_reply is not None)
         else:
             args.id = stable_id("broadcast", author_key, sorted(targets), args.text, args.subject)
+        if args.intent is not None:
+            args.id = stable_id("intent", args.id, args.intent)
     group = source.get("group") if choice == "all" else None
     if len(targets) > 1 and group is None:
         from src.cli.main import _return_endpoint
@@ -199,6 +218,12 @@ def deliver(root, args):
         mode = select_delivery(sessions.descriptor(single.client), single.steer, single.queue, single.idle_only)
         if len(targets) > 1 and mode == "unsupported_requires_binding":
             raise ValueError("A named recipient has no supported immediate route: " + single.client + " " + single.session)
+        if args.delivery_report:
+            from src.runtime import mail_routes
+            from src.runtime.device_names import REPORT_CARRIERS
+            selected = mail_routes.candidates(root, single.to, args.transport, delivery_report=True)
+            if single.to == origin or not all(carrier in REPORT_CARRIERS for carrier in selected):
+                raise ValueError("A delivery report requires a paired report carrier for every selected recipient")
         deliveries.append(single)
 
     def send_one(single):
@@ -212,18 +237,30 @@ def deliver(root, args):
 
     if len(deliveries) == 1:
         return send_one(deliveries[0])
-    fields = ("id", "host", "client", "session", "ok", "status", "inbox_status", "session_status",
-              "current_turn_accepted", "error_code", "error_message")
+    fields = ("id", "host", "client", "session", "ok", "status", "transport", "route_attempts", "inbox_status", "session_status",
+              "current_turn_accepted", "return_session_status", "return_address_known", "bidirectional_ready",
+              "return_error_code", "return_next_action", "error_code", "error_message", "session_accepted",
+              "communication_intent", "intent_delivery")
     fingerprint = stable_id("plan", plan_group(group, root), args.text, args.subject, args.kind, link, (attachment or {}).get("sha256"),
                             device_key(args.return_host, root), args.return_client, args.return_session, args.return_codex_home,
                             args.return_claude_home, args.return_queue, args.one_way, args.steer, args.queue, args.idle_only)
+    if args.delivery_report:
+        fingerprint = stable_id("delivery-report", fingerprint)
+    if args.intent is not None:
+        fingerprint = stable_id("intent", fingerprint, args.intent)
     done = batch_state(root, actor, args.id, fingerprint)
 
     def submit(single):
         if single.id in done:
-            return {**done[single.id], "previously_accepted": True}
+            saved = done[single.id]
+            return {"preflight": {"status": "not_recorded"}, "communication_intent": args.intent,
+                    "intent_delivery": "unspecified" if args.intent is None else "unverified",
+                    **saved, "previously_accepted": True}
         raw = send_one(single)
         result = {k: raw[k] for k in fields if k in raw}
+        result["preflight"] = _batch_preflight(raw.get("preflight"))
+        result.setdefault("communication_intent", args.intent)
+        result.setdefault("intent_delivery", "unspecified" if args.intent is None else "unverified")
         if result.get("ok"):
             directory = transport.directory(root)
             receipt = {**result, "host": directory.mail_device(result["host"])} if directory.legacy_clients else result
@@ -234,5 +271,8 @@ def deliver(root, args):
         futures = [pool.submit(copy_context().run, submit, single) for single in deliveries]
         result = [future.result() for future in futures]
     ok = all(r.get("ok") for r in result)
-    return {"ok": ok, "status": "group_delivered" if ok else "group_incomplete", "id": args.id,
+    status = "group_delivered" if ok else "group_incomplete"
+    if ok and any(r.get("status") in {"broker_acknowledged", "queue_acknowledged"} for r in result):
+        status = "group_submitted"
+    return {"ok": ok, "status": status, "id": args.id,
             "group": group, "deliveries": result, "sender_endpoint": actor}

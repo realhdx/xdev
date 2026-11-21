@@ -2,6 +2,10 @@
 
 [简体中文](CHANGELOG.md) · **English**
 
+## Windows Pair 1.1.0-preview.13 · Documentation revision 1 · 2026-11-22
+
+Open the [release overview](RELEASE-NOTES.en.md) offline after extracting the ZIP. It links to guides for working with pages and Windows controls, delivering mail across networks, waking an original chat, following concurrent exchanges and archiving mail. The kit also includes the WorkBuddy plugin’s chat-mail instructions and an optional [isolated browser experiment](../examples/isolated-browser/README.md). It uses the same runtime and offline dependencies as preview.13. Existing installations can use the new guides immediately.
+
 ## Windows Pair 1.1.0-preview.13 · 2026-11-21
 
 Concurrent exchanges can track progress by original letter ID. Group mail returns delivery and availability evidence for each addressee. Freshness uses the sender’s own inquiry time to accommodate different device clocks. [Working across chats](../design/mail-lifecycle.md)

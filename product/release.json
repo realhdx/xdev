@@ -3,7 +3,8 @@
   "product": "xdev",
   "series": "windows-pair",
   "version": "1.1.0-preview.13",
-  "release_date": "2026-11-21",
+  "documentation_revision": 1,
+  "release_date": "2026-11-22",
   "runtime_sha256": "4781f22d1cb43087013f94104b8717678ef35cc3e7312d7576ce1a380f5b034d",
   "optional_deps_sha256": "4772c1b5c6fef343edfcab3239ce14ac0bf65d46f3e904412d78750e50e36609"
 }

@@ -1,6 +1,8 @@
 import hashlib
 import importlib.util
 import json
+import re
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -220,6 +222,52 @@ class ProductPackageTests(unittest.TestCase):
     def test_host_arrival_protocol_enters_preview_eleven(self):
         added = verify.runtime_filenames("1.1.0-preview.11") - verify.runtime_filenames("1.1.0-preview.10")
         self.assertEqual(added, {"src/adapters/mail_arrival.py", "src/adapters/mail_arrival_stdio.py"})
+
+    def test_preview_thirteen_docs_kit_links_resolve_without_the_source_checkout(self):
+        version = "1.1.0-preview.13"
+        earlier = verify.package_filenames(version)
+        current = verify.package_filenames(version, documentation_revision=1)
+        added = verify.RELEASE_NOTES | {verify.WORKBUDDY_SKILL} | verify.ISOLATED_BROWSER_EXAMPLE
+        self.assertEqual(current - earlier, added)
+        self.assertTrue(current <= verify.package_filenames("1.1.0-preview.14"))
+        for name in verify.runtime_filenames(version) - verify.runtime_filenames():
+            path = self.source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"fixture runtime\n")
+        for name in current - {verify.RUNTIME, verify.DEPENDENCIES}:
+            directory = "product" if name in verify.ROOT_FILES | verify.ENGLISH_MANUALS | verify.RELEASE_NOTES else ""
+            path = self.source / directory / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if name.endswith(".md"):
+                shutil.copyfile(builder.SOURCE / directory / name, path)
+            elif not path.exists():
+                path.write_bytes(b"fixture\n")
+        self.select_version(version)
+        self.assertEqual(verify.verify_archive(self.build()["archive"]), self.release)
+        self.release["documentation_revision"] = 1
+        self.select_version(version)
+        result = self.build()
+        self.assertTrue(result["archive"].endswith("-1.1.0-preview.13-docs.1.zip"))
+        unpacked = self.work / "unpacked"
+        with zipfile.ZipFile(result["archive"]) as archive:
+            archive.extractall(unpacked)
+        self.assertEqual(verify.verify_directory(unpacked), self.release)
+        for name in current:
+            if not name.endswith(".md"):
+                continue
+            manual = unpacked / name
+            for target in re.findall(r"\[[^\]\n]*\]\(([^)\n]+)\)", manual.read_text(encoding="utf-8")):
+                filename = target.partition("#")[0]
+                if filename and not re.match(r"[a-z]+:", filename):
+                    local = (manual.parent / filename).resolve()
+                    self.assertTrue(local.is_relative_to(unpacked) and local.is_file(), (name, target))
+        for name in added:
+            path = unpacked / name
+            blob = path.read_bytes()
+            path.unlink()
+            with self.assertRaisesRegex(ValueError, "missing or additional"):
+                verify.verify_directory(unpacked)
+            path.write_bytes(blob)
 
     def test_background_receiver_enters_the_kit_with_local_subscriptions(self):
         old, new = "1.1.0-preview.7", "1.1.0-preview.8"

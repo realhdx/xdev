@@ -32,7 +32,7 @@ xdev 让消息在 AI 聊天之间自由往来，无论它们是否同机、是�
 
 **指定的聊天可以在另一个网络上。** Windows 和 Linux 消息端可以通过已配对的 SSH 连接直寄，或借助自己的 GitHub 私仓暂存端点加密的信件。支持的应用接入一次，就能按地址找到原聊天、随信带上回信地址；接入到信事件的宿主还可以在来信时唤醒空闲聊天。[跨网选路](design/session-relay.md) · [原聊天接入](design/host-discovery.md) · [云端接入](design/paired-folder-mail.md)
 
-**发信前，对方现在有空吗？** 新版预览可以查看指定聊天的状态，寄出后沿同一封信核对已读、处理进展和回信意向。任务变了，还可以撤回未读信或寄送更正稿。[当前预览版](https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13) · [信件状态与留存](design/mail-lifecycle.md)
+**发信前，对方现在有空吗？** 新版预览可以查看指定聊天的状态，寄出后沿同一封信核对已读、处理进展和回信意向。任务变了，还可以撤回未读信或寄送更正稿。[当前预览版](https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13-docs.1) · [信件状态与留存](design/mail-lifecycle.md)
 
 ## 安装后使用
 

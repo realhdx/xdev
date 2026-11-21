@@ -26,6 +26,9 @@ LEGACY_PACKAGE_FILES = ROOT_FILES | DEPLOY_FILES | INTEGRATION_FILES | {RUNTIME,
 SKILL_FILE = "integrations/skills/xdev-local/SKILL.md"
 PROJECT_NOTICES = {"LICENSE", "CITATION.cff"}
 ENGLISH_MANUALS = {"README.en.md", "AI-DEPLOY.en.md", "CHANGELOG.en.md"}
+RELEASE_NOTES = {"RELEASE-NOTES.md", "RELEASE-NOTES.en.md"}
+WORKBUDDY_SKILL = "integrations/workbuddy/skills/xdev-session-mail/SKILL.md"
+ISOLATED_BROWSER_EXAMPLE = {"examples/isolated-browser/README.md", "examples/isolated-browser/check.cjs"}
 RELAY_GUIDE = "design/session-relay.md"
 RELAY_ACL = "deploy/session-relay.conf.example"
 MANAGED_QUEUE_GUIDE = "design/managed-queue.md"
@@ -59,6 +62,8 @@ def package_filenames(version, documentation_revision=0):
     if since_network_preview(version, 12):
         files.update(CONTACT_GUIDES | {"deploy/paired-folder-mail.py", "deploy/paired-folder-worker.py",
                      "deploy/paired-folder-service.ps1", "deploy/github-pr-notice.py", "deploy/mail-retention.py"})
+    if since_network_preview(version, 14) or (since_network_preview(version, 13) and documentation_revision >= 1):
+        files.update(RELEASE_NOTES | {WORKBUDDY_SKILL} | ISOLATED_BROWSER_EXAMPLE)
     return files
 
 
@@ -272,8 +277,11 @@ def main():
         release = verify_directory(args.path)
     else:
         release = verify_archive(args.path, args.sha256)
-    return {"ok": True, "product": release["product"], "series": release["series"],
-            "version": release["version"], "runtime_sha256": release["runtime_sha256"]}
+    result = {"ok": True, "product": release["product"], "series": release["series"],
+              "version": release["version"], "runtime_sha256": release["runtime_sha256"]}
+    if "documentation_revision" in release:
+        result["documentation_revision"] = release["documentation_revision"]
+    return result
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ import hashlib
 import importlib.util
 import json
 import os
+import posixpath
+import re
 import shutil
 import sys
 import tempfile
@@ -30,7 +32,7 @@ optional = source_module("xdev_release_optional", SOURCE / "deploy/optional.py")
 
 def source_inputs(source, version, documentation_revision=0):
     package = verify.package_filenames(version, documentation_revision)
-    product_inputs = verify.ROOT_FILES | verify.ENGLISH_MANUALS
+    product_inputs = verify.ROOT_FILES | verify.ENGLISH_MANUALS | verify.RELEASE_NOTES
     paths = {}
     for name in package - {verify.RUNTIME, verify.DEPENDENCIES}:
         directory = source / "product" if name in product_inputs else source
@@ -58,6 +60,19 @@ def publish_file(staged, destination):
             raise ValueError(f"An existing release has different bytes: {destination.name}") from None
 
 
+def relocate_markdown_links(blob, source_name, kit_name, source_to_kit):
+    """Keep links between reviewed files usable after manuals move to the ZIP root."""
+    def target(match):
+        relative = match[0].decode("utf-8")
+        original = posixpath.normpath(posixpath.join(posixpath.dirname(source_name), relative))
+        if original not in source_to_kit:
+            return match[0]
+        relocated = posixpath.relpath(source_to_kit[original], posixpath.dirname(kit_name) or ".")
+        return relocated.encode("utf-8")
+
+    return re.sub(rb"(?<=\]\()([^\s#)]+)(?=[#)])", target, blob)
+
+
 def build(source, output_dir, *, wheelhouse=None, dependencies=None):
     if (wheelhouse is None) == (dependencies is None):
         raise ValueError("Select the pinned wheelhouse directory or the existing dependency ZIP")
@@ -68,6 +83,7 @@ def build(source, output_dir, *, wheelhouse=None, dependencies=None):
     release = verify.validate_release(verify.strict_json(metadata_path.read_bytes()))
     revision = release.get("documentation_revision", 0)
     files = source_inputs(source, release["version"], revision)
+    source_to_kit = {path.relative_to(source).as_posix(): name for name, path in files.items()}
     edition = f"-docs.{revision}" if revision else ""
     reviewed = {p.relative_to(source).as_posix() for p in deploy.source_files(source)}
     expected = verify.runtime_filenames(release["version"])
@@ -103,12 +119,8 @@ def build(source, output_dir, *, wheelhouse=None, dependencies=None):
         with zipfile.ZipFile(candidate, "w") as archive:
             for name, path in sorted(files.items()):
                 blob = path.read_bytes()
-                if path.parent == source / "product" and name.endswith(".md"):
-                    # Product manuals move from product/ to the archive root.
-                    for guide in (verify.RELAY_GUIDE, verify.MANAGED_QUEUE_GUIDE, verify.GITHUB_MAIL_GUIDE, *verify.HOST_GUIDES, *verify.CONTACT_GUIDES):
-                        if guide in files:
-                            target = guide.encode("ascii")
-                            blob = blob.replace(b"](../" + target, b"](" + target)
+                if name.endswith(".md"):
+                    blob = relocate_markdown_links(blob, path.relative_to(source).as_posix(), name, source_to_kit)
                 record = deploy.name_record(name)
                 # Nested archives are already complete, deterministic containers.
                 if name in (verify.RUNTIME, verify.DEPENDENCIES):

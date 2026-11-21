@@ -7,7 +7,7 @@ This guide covers xdev Windows Pair 1.1.0-preview.13. Choose an assistant that c
 ## A task to give your assistant
 
 ```text
-Download xdev and its checksum from https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13, then follow the included AI deployment guide to install and test it on the Windows devices I specify.
+Download xdev and its checksum from https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13-docs.1, then follow the included AI deployment guide to install and test it on the Windows devices I specify.
 ```
 
 ## Install or upgrade

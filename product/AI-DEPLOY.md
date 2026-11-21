@@ -7,7 +7,7 @@
 ## 可直接交给助手的任务
 
 ```text
-请从 https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13 下载 xdev 安装包和校验文件，按包内 AI 部署指南在我指定的 Windows 设备上安装并验证。
+请从 https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13-docs.1 下载 xdev 安装包和校验文件，按包内 AI 部署指南在我指定的 Windows 设备上安装并验证。
 ```
 
 ## 安装或升级

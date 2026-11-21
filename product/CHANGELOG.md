@@ -2,6 +2,10 @@
 
 **简体中文** · [English](CHANGELOG.en.md)
 
+## Windows Pair 1.1.0-preview.13 · 资料修订 1 · 2026-11-22
+
+解压即可离线阅读[本版功能总览](RELEASE-NOTES.md)，从网页和 Windows 窗口的读取与操作，查到跨网投递、原聊天唤醒、并行收发及归档指南。另附 WorkBuddy 插件的会话收信指引及可选的[独立浏览器试验](../examples/isolated-browser/README.md)。运行时与离线依赖沿用 preview.13；已安装该版的用户可直接使用新资料。
+
 ## Windows Pair 1.1.0-preview.13 · 2026-11-21
 
 多组会话可同时寄信、按原信独立查进度；群发会分别返回每位收件人的投递和状态证据。两端时钟不一致时，预检使用发件端的查询时间判断信息是否新鲜。[会话协作](../design/mail-lifecycle.md)

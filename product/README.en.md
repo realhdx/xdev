@@ -4,7 +4,9 @@
 
 xdev lets AI chats send messages to one another and reply to the original sender. The same CLI and MCP tools also handle files and jobs. The chats can share a Windows device or run on different devices that have been paired.
 
-This guide covers `windows-pair` 1.1.0-preview.13. [Changelog](CHANGELOG.en.md)
+This guide covers documentation revision 1 of `windows-pair` 1.1.0-preview.13. [What's new](RELEASE-NOTES.en.md) · [Changelog](CHANGELOG.en.md)
+
+Use [web pages and Windows application windows](#read-web-pages-and-application-windows) to gather material, then send a passage with its source and a question to the chat that needs it. The included guides cover [finding the original chat](../design/host-discovery.md), [waking an idle chat](../design/paired-folder-mail.md), [concurrent handoffs](../design/mail-lifecycle.md) and [archiving and restoring letters](../design/mail-retention.md). The WorkBuddy plugin also includes [instructions for reading and replying in the addressed chat](../integrations/workbuddy/skills/xdev-session-mail/SKILL.md).
 
 Select `direct` to send mail over a paired SSH connection. For store-and-forward delivery, both endpoints can require end-to-end encryption for their pairing and send ciphertext through a relay of your choice. Third-party apps can register their own chat addresses. [Windows and Linux messaging guide](../design/session-relay.md) · [Store encrypted mail in Amazon SQS](../design/managed-queue.md)
 
@@ -16,7 +18,7 @@ Check a chat’s availability before sending, then follow the same letter throug
 - **[Ask an AI assistant to install xdev](AI-DEPLOY.en.md).** Send the line below to an assistant with access to the target PCs.
 
 ```text
-Download xdev and its checksum from https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13, then follow the included AI deployment guide to install and test it on the Windows devices I specify.
+Download xdev and its checksum from https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13-docs.1, then follow the included AI deployment guide to install and test it on the Windows devices I specify.
 ```
 
 ## Requirements
@@ -47,10 +49,10 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes lab-ssh "python --version"
 
 ### 2. Verify and extract the release
 
-Download `xdev-windows-pair-1.1.0-preview.13.zip` and its matching `.zip.sha256` checksum file from the same release. Use the same archive for all selected PCs. Run the following in PowerShell from the downloads directory on each target PC. If the `py` launcher is unavailable, replace `py -3.14` with `& 'full path to the interpreter'`.
+Download `xdev-windows-pair-1.1.0-preview.13-docs.1.zip` and its matching `.zip.sha256` checksum file from the same release. Use the same archive for all selected PCs. Run the following in PowerShell from the downloads directory on each target PC. If the `py` launcher is unavailable, replace `py -3.14` with `& 'full path to the interpreter'`.
 
 ```powershell
-$zip = (Resolve-Path '.\xdev-windows-pair-1.1.0-preview.13.zip').Path
+$zip = (Resolve-Path '.\xdev-windows-pair-1.1.0-preview.13-docs.1.zip').Path
 $expected = ((Get-Content -LiteralPath ($zip + '.sha256') -TotalCount 1) -split '\s+')[0]
 if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ine $expected) { throw 'Release archive verification failed' }
 $kit = Join-Path (Split-Path $zip) ([IO.Path]::GetFileNameWithoutExtension($zip))
@@ -182,6 +184,8 @@ For an authorized browser tab, `xdev surface tools --provider browser --target T
 ```
 
 **Web pages.** Install and pair OpenCode Browse separately on the device with the browser. Lend an existing tab through the extension or open a new one with `surface open --provider browser --value https://example.com`. Use `close` to give back a lent tab or close an agent tab. Use references only in their original tab. Take a fresh snapshot after navigation. [Browse documentation](https://opencode.ai/product/browse)
+
+**Independent browser experiment.** The optional [isolated browser check](../examples/isolated-browser/README.md) reads and operates synthetic pages in a separate browser environment. Run the example independently of OpenCode Browse and the regular xdev CLI and MCP entry points.
 
 **Windows applications.** The system's UI Automation interface supplies the controls that an app exposes on the current interactive desktop. Use `invoke` for a control's default action and `set-value` with `--ref` and `--value` to fill an editable control. Check the snapshot for available actions. After a timeout, inspect the target before retrying. [Microsoft UI Automation](https://learn.microsoft.com/en-us/dotnet/framework/ui-automation/ui-automation-overview)
 

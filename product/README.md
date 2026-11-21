@@ -4,7 +4,9 @@
 
 xdev 让指定的 AI 聊天彼此寄信、沿原信回复，也能通过同一套 CLI 和 MCP 工具操作文件、运行任务。聊天可以在同一台 Windows 设备上，也可以位于已配对的不同设备上。
 
-本手册对应 `windows-pair` 1.1.0-preview.13 预览版。[版本说明](CHANGELOG.md)
+本手册对应 `windows-pair` 1.1.0-preview.13 资料修订 1。[本版新功能](RELEASE-NOTES.md) · [版本记录](CHANGELOG.md)
+
+从[网页和 Windows 窗口](#读取网页与应用窗口)读取材料后，可以把摘录、来源和问题寄给指定聊天。随包手册还涵盖[原聊天自动寻址](../design/host-discovery.md)、[空闲唤醒](../design/paired-folder-mail.md)、[多人交接](../design/mail-lifecycle.md)和[归档恢复](../design/mail-retention.md)。WorkBuddy 插件附有[原聊天查信与回信指引](../integrations/workbuddy/skills/xdev-session-mail/SKILL.md)。
 
 选用 `direct` 时，xdev 通过已配对的 SSH 连接寄信。需要跨网暂存时，可在两端为该设备对启用端到端加密，交给自选中继保存密文。第三方 AI 应用可以登记自己的会话地址。[Windows 与 Linux 接入指南](../design/session-relay.md) · [使用 Amazon SQS 暂存密文](../design/managed-queue.md)
 
@@ -16,7 +18,7 @@ xdev 让指定的 AI 聊天彼此寄信、沿原信回复，也能通过同一�
 - **[交给 AI 安装](AI-DEPLOY.md)**。把下面一句话发给能操作目标电脑的助手。
 
 ```text
-请从 https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13 下载 xdev 安装包和校验文件，按包内 AI 部署指南在我指定的 Windows 设备上安装并验证。
+请从 https://github.com/realhdx/xdev/releases/tag/v1.1.0-preview.13-docs.1 下载 xdev 安装包和校验文件，按包内 AI 部署指南在我指定的 Windows 设备上安装并验证。
 ```
 
 ## 运行条件
@@ -47,10 +49,10 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes lab-ssh "python --version"
 
 ### 2. 校验并解压
 
-从同一发行版本下载 `xdev-windows-pair-1.1.0-preview.13.zip` 和同名 `.zip.sha256` 校验文件。部署多台时使用同一份包。在每台目标电脑的下载目录运行下面的 PowerShell。若没有 `py` 启动器，以 `& '解释器的完整路径'` 替换示例中的 `py -3.14`。
+从同一发行版本下载 `xdev-windows-pair-1.1.0-preview.13-docs.1.zip` 和同名 `.zip.sha256` 校验文件。部署多台时使用同一份包。在每台目标电脑的下载目录运行下面的 PowerShell。若没有 `py` 启动器，以 `& '解释器的完整路径'` 替换示例中的 `py -3.14`。
 
 ```powershell
-$zip = (Resolve-Path '.\xdev-windows-pair-1.1.0-preview.13.zip').Path
+$zip = (Resolve-Path '.\xdev-windows-pair-1.1.0-preview.13-docs.1.zip').Path
 $expected = ((Get-Content -LiteralPath ($zip + '.sha256') -TotalCount 1) -split '\s+')[0]
 if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ine $expected) { throw '发布包校验失败' }
 $kit = Join-Path (Split-Path $zip) ([IO.Path]::GetFileNameWithoutExtension($zip))
@@ -182,6 +184,8 @@ GitHub 信件到达后，xdev 会保存在指定聊天的本地信箱。聊天�
 ```
 
 **网页。** 需要本机已有可执行的 OpenCode Browse 和已配对的浏览器扩展。用户可通过扩展借出已打开的标签，或用 `surface open --provider browser --value https://example.com` 打开一个新标签；用 `close` 归还或关闭对应标签。引用只用于取得它的标签。页面导航后重新读取快照。[Browse 使用说明](https://opencode.ai/product/browse)
+
+**独立浏览器实验。** 包内另附可选的[隔离浏览器自测](../examples/isolated-browser/README.md)，用于在单独的浏览器环境里试验读取和操作合成页面。这个示例可脱离 OpenCode Browse 运行，与上述日常 CLI/MCP 入口分别使用。
 
 **Windows 应用。** 使用系统自带的 UI Automation，当前登录桌面上的程序须向辅助功能接口提供控件。`invoke` 调用按钮等控件的默认动作，`set-value` 使用 `--ref` 和 `--value` 填写可编辑控件。每个窗口支持的动作以快照为准。遇到超时先回读状态，避免重复操作。[微软 UI Automation 说明](https://learn.microsoft.com/en-us/dotnet/framework/ui-automation/ui-automation-overview)
 

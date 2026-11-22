@@ -1,6 +1,6 @@
 # xdev — A channel for collaboration between AI chats
 
-**English** · [简体中文](README.md)
+**English** · [简体中文](README.md)　|　[Features](#what-you-can-do-with-xdev) · [Will my app work?](#will-it-work-with-my-ai-app) · [Install](#getting-started)
 
 Generative AI has lowered the barriers to research and creative work. More people can put their talents to work and turn an idea into something real. Twice the computing power can mean twice the output. Yet you have no extra time to review it. That imbalance turns time saved in creation into pressure at review. Early factories in the Industrial Revolution faced a similar bottleneck: machines sped up, but someone still had to move each piece to the next station. Today, AI tools work in parallel, then queue up for someone to pass a message. The promise of artificial intelligence has become intelligence plus manual labor. The creator is back on the assembly line, tightening one screw as the next comes within reach.
 
@@ -14,25 +14,28 @@ Now there’s time to linger over what you’ve made, and room to wonder where y
 
 ## What you can do with xdev
 
+Say an assistant on your laptop reads data from a web page, sends the file to a workstation for analysis, then passes the results and their source to a review chat in another app. When the reviewer asks “Did that count include blank rows?”, the question goes back to the assistant that ran the analysis. It can check the command and the job log before it answers.
+
 | Goal | How xdev helps |
 | --- | --- |
-| Hand work to a particular chat | Address a chat by device, app and chat ID, even inside the same app on one PC. Send to a group, forward a letter with the original attached, reply in context or write back to the original author. If the client offers transcripts or an export, look up what was said in the original chat. [Chat messaging](product/README.en.md#send-mail-to-a-specific-chat) · [Reading the original chat](#read-the-original-chat) |
-| See whether someone has picked up the work | Check the recipient’s last reported status before sending. Afterwards, track arrival, queuing, reads, progress and replies separately. If plans change, request a recall of unread mail or send a correction. Archive letters you want to keep locally. [Mail status](design/mail-lifecycle.md#english) · [Retention and archiving](design/mail-retention.md#english) |
-| Read and use a web page | Share an open tab with xdev or have it open a new one. An AI can read the headings and text the page exposes and send a passage with its source to another chat. It can also follow a link, fill in a form and read back the result after submission. [Working with web pages](product/README.en.md#read-web-pages-and-application-windows) |
-| Read and operate a Windows app | Through Windows accessibility, an AI can read the text, control names and states a window exposes. For example, it can tell whether **Export** is enabled, activate the button by its identifier and read the app’s response without locating it in a screenshot. [Working with windows](product/README.en.md#read-web-pages-and-application-windows) |
-| Work on another computer | Browse, edit and transfer files in either direction. Run commands on a paired Windows PC or in its WSL environment. Start long jobs in the background, check their logs and retrieve the results. [Files and jobs](product/README.en.md#files-and-jobs) |
-| Reach a chat on another network | Windows and Linux messaging endpoints can send mail directly over paired SSH or through your own private GitHub repository, which temporarily holds end-to-end encrypted mail. Apps that handle incoming mail events can wake an idle chat. [Cross-network routes](design/session-relay.md) · [Connecting cloud chats](design/paired-folder-mail.md) |
+| Read and use a web page | Share an open tab or let xdev open one. An assistant can read headings and text, follow a link, fill in a form and check the result after submission. [Web pages](product/README.en.md#read-web-pages-and-application-windows) |
+| Read and operate a Windows app | Read the text and control states a window exposes through Windows accessibility. An assistant can tell whether **Export** is enabled, activate it by its identifier and read the response without locating it in a screenshot. [App windows](product/README.en.md#read-web-pages-and-application-windows) |
+| Put another computer to work | Browse, edit and transfer files in either direction. Run commands on a paired Windows PC or in WSL. Leave long jobs running in the background, then check their logs and retrieve the results. [Files and jobs](product/README.en.md#files-and-jobs) |
+| Hand work to the right chat | Address a chat by device, app and chat ID, even within one app on one PC. Send to a group, forward the original letter, reply to the sender or write to the original author. [Chat messaging](product/README.en.md#send-mail-to-a-specific-chat) · [Read the original chat](#read-the-original-chat) |
+| Reach a chat on another network | Windows and Linux messaging endpoints can send mail over paired SSH or through your own private GitHub repository, which temporarily holds end-to-end encrypted mail. [Cross-network routes](design/session-relay.md) · [Cloud chats](design/paired-folder-mail.md) |
+| See whether the work has been picked up | Check the recipient’s last reported status before sending. Track arrival, queuing, reads, progress and replies. If plans change, request a recall of unread mail or send a correction. Archive important letters locally. [Mail status](design/mail-lifecycle.md#english) · [Retention and archiving](design/mail-retention.md#english) |
 
 ## Will it work with my AI app?
 
-Apps with local MCP support can call xdev tools. To deliver mail directly to a particular chat, start here.
+AI tools with local MCP support or permission to run local commands can use xdev. An app without a built-in adapter can take part in a first handoff through its interface. If it also exposes tools to find and notify an existing chat by ID, a reusable template can deliver future letters by address.
 
-- **Use a built-in adapter.** Codex, DeepSeek Harness, OpenCode and some Claude Desktop engines already have adapters for incoming mail. Some clients can take a message during the current turn. Others queue it for the next one. [Client setup guide](product/CLIENTS.en.md) · [How each client receives mail](product/README.en.md#which-clients-can-notify-an-existing-chat)
-- **Make a template for a new app or version.** If the app exposes tools to find and notify a particular chat, you or your AI assistant can map their fields using the example. If the service already declares those roles, you can authorize xdev to match them automatically. Run `xdev ai --discover` to see approved connections, then send a test letter and check for a read receipt and a reply from the intended chat. Waking an idle chat requires support from the app itself. [Template and verification example](design/host-discovery.md#english)
+- **Built-in adapters cover several widely used AI clients.** In tests with Codex, DeepSeek Harness, OpenCode and supported Claude Desktop engines, the addressed chat received a letter and replied to it. The receiving app determines whether a letter can wake an idle chat, reach it during a turn or queue for the next one. [How each client receives mail](product/README.en.md#which-clients-can-notify-an-existing-chat)
+- **Custom templates extend support to new apps and versions that expose a chat API.** An assistant can read the app’s API documentation in an authorized tab, then map the lookup and delivery tools and their fields. If the service declares those roles, you can authorize xdev to match them automatically. Check the target with `xdev ai --discover --client <app> --session <chat-id>`, then exchange a test letter. Other chats in the same app can reuse that configuration. [Template and verification example](design/host-discovery.md#english)
+- **Interface relays can reach chats without a dedicated adapter.** An authorized assistant needs to identify the chat, submit the question with its letter ID and read back the answer in that same chat. It then replies to the original letter under its own name and credits the source chat. Gemini and Doubao web chats have completed round trips this way. [How to relay a letter](product/README.en.md#which-clients-can-notify-an-existing-chat) · [Tested clients](product/CLIENTS.en.md#the-client-shows-a-connection-but-the-chat-cannot-use-it)
 
 ## Getting started
 
-Choose one installation method.
+The Windows package requires Windows x64, 64-bit CPython 3.14 and Windows PowerShell. Choose either installation method.
 
 | Install it yourself | Have an AI install it |
 | --- | --- |
@@ -42,42 +45,35 @@ Choose one installation method.
 Get the latest release of xdev from https://github.com/realhdx/xdev and follow the included AI deployment guide to install and verify it on the Windows devices I specify.
 ```
 
-For builds and tests, see the [build guide](BUILDING.en.md).
+### Requirements
+
+Remote file transfers and commands use the receiving PC’s paired SSH/SFTP connection. Browser access requires OpenCode Browse and a paired extension. Windows apps must run on an accessible signed-in desktop. The receiver can grant remote read or interaction permissions separately for tabs and windows. The package includes offline dependencies for local MCP. [Full requirements and optional components](product/README.en.md#requirements)
 
 ## Using xdev after installation
 
-### Retrieve a result file
+### Send a letter to a specific chat
 
-After installing and pairing the PCs, run this in PowerShell. Replace `lab` with the name you registered for the other PC and use the path to an existing file on it. Either PC can initiate a transfer.
+Run this PowerShell example in a chat with a registered sender identity. Replace `lab` with the paired device name and supply the recipient’s client and chat ID. This example sends to OpenCode.
 
 ```powershell
 $xdev = Join-Path $env:LOCALAPPDATA 'CrossDeviceCollab\xdev.cmd'
 $peer = 'lab'
-& $xdev who --host $peer
-& $xdev file pull --host $peer --remote 'D:\shared\results.csv' --local '.\results.csv' --no-overwrite
+& $xdev msg send --to $peer --client opencode --session '<chat-id>' --subject 'Check the export' --text 'Please check the row count in the exported file and reply to this letter.'
 ```
 
-When editing an existing remote file, use the SHA-256 digest from your first read as a condition for writing it back. This protects changes someone else saved in the meantime. For a long computation, start a background job on the target PC and use its job ID to look up its status and logs later.
+Read the letter in the receiving chat and reply to it. A linked reply back in the sending chat confirms the round trip. If the letter is queued, use its original ID to check progress. [Read and reply commands](product/README.en.md#send-mail-to-a-specific-chat)
 
-### Send a letter to a specific chat
+### Retrieve a result file
 
-In the sending chat, use the same `$xdev` and `$peer` as above. This example addresses an OpenCode chat. Replace the placeholder with the recipient’s chat ID. [Read and reply examples](product/README.en.md#send-mail-to-a-specific-chat)
+To check the count independently, retrieve the file from the same device. Reuse the variables above and replace the remote path with the file’s actual location.
 
 ```powershell
-& $xdev msg send --to $peer --client opencode --session '<chat-id>' --subject 'Check the export' --text 'Please check the row count in the exported file and reply to this letter.'
+& $xdev file pull --host $peer --remote 'D:\shared\results.csv' --local '.\results.csv' --no-overwrite
 ```
 
 ### Read the original chat
 
 Use `xdev file read` to read a range of lines from an existing transcript on the other PC, or use `xdev exec` to run the client’s own export command. For example, OpenCode’s `opencode export <chat-id>` returns the chat as JSON.
-
-## Requirements
-
-- **Core commands** require Windows x64, 64-bit CPython 3.14 and Windows PowerShell. Each PC that receives cross-device operations needs a reachable OpenSSH/SFTP service and must accept the other PC’s verified SSH credentials.
-- **Local MCP** uses the offline Python dependencies included in the installer archive. Receiving an incoming letter in an existing chat also requires a delivery mode supported by that client. [Third-party components and licenses](product/AI-DEPLOY.en.md#third-party-components)
-- **Optional features** have their own requirements. Windows background jobs use Task Scheduler. Linux commands run in a WSL distribution installed on the target PC. NATS JetStream is required only if you choose broker-based message delivery.
-
-Browser access requires OpenCode Browse and a paired browser extension. A Windows app must be running on a signed-in desktop that xdev can access. The receiving device can grant remote read-only or interactive access separately for web pages and Windows apps.
 
 ## Version updates
 
@@ -85,7 +81,7 @@ Browser access requires OpenCode Browse and a paired browser extension. A Window
 
 ## Contributing
 
-In tests with Codex, supported Claude Desktop engines, DeepSeek Harness and OpenCode, xdev delivered messages to specific chats and routed replies back to the sender, with each reply linked to the original message. We also tested round trips in WorkBuddy with help in the app, and in the Gemini and Doubao web apps through a browser relay.
+The client guide records round trips through several routes, from direct delivery in Codex and supported Claude Desktop engines to assisted delivery in WorkBuddy and relays through web chats. [Tested clients and methods](product/CLIENTS.en.md)
 
 If you receive your first xdev letter in a new AI client, a pull request with the client version, setup steps and verification method will help others get connected. If a message gets stuck in a queue, open an issue and describe when you expected it to reach the chat and how far it actually got. After changing the code, follow the [build guide](BUILDING.en.md) to run the tests.
 

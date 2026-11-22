@@ -12,6 +12,13 @@ For cross-device work, Windows PCs connect over SSH and SFTP. Through the comman
 
 Now there’s time to linger over what you’ve made, and room to wonder where you might go next.
 
+## Will it work with my AI app?
+
+Apps with local MCP support can call xdev tools. To deliver mail directly to a particular chat, start here.
+
+- **Use a built-in adapter.** Codex, DeepSeek Harness, OpenCode and some Claude Desktop engines already have adapters for incoming mail. Some clients can take a message during the current turn. Others queue it for the next one. [Client setup guide](product/CLIENTS.en.md) · [How each client receives mail](product/README.en.md#which-clients-can-notify-an-existing-chat)
+- **Make a template for a new app or version.** If the app exposes tools to find and notify a particular chat, you or your AI assistant can map their fields using the example. If the service already declares those roles, you can authorize xdev to match them automatically. Run `xdev ai --discover` to see approved connections, then send a test letter and check for a read receipt and a reply from the intended chat. Waking an idle chat requires support from the app itself. [Template and verification example](design/host-discovery.md#english)
+
 ## Getting started
 
 Choose one installation method.
@@ -24,7 +31,7 @@ Choose one installation method.
 Get the latest release of xdev from https://github.com/realhdx/xdev and follow the included AI deployment guide to install and verify it on the Windows devices I specify.
 ```
 
-Looking for your app? Find its setup steps and a quick test in the [AI client guide](product/CLIENTS.en.md). For builds and tests, see the [build guide](BUILDING.en.md).
+For builds and tests, see the [build guide](BUILDING.en.md).
 
 ### What’s new in 1.1?
 

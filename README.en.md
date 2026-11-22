@@ -16,9 +16,10 @@ Now there’s time to linger over what you’ve made, and room to wonder where y
 
 | Goal | How xdev helps |
 | --- | --- |
-| Hand work to a particular chat | Address a chat by device, app and chat ID. Chats can exchange letters even inside the same app on one PC. Send to a group, forward a letter with the original attached, reply in context or write back to the original author. [Chat messaging](product/README.en.md#send-mail-to-a-specific-chat) |
+| Hand work to a particular chat | Address a chat by device, app and chat ID, even inside the same app on one PC. Send to a group, forward a letter with the original attached, reply in context or write back to the original author. If the client offers transcripts or an export, look up what was said in the original chat. [Chat messaging](product/README.en.md#send-mail-to-a-specific-chat) · [Reading the original chat](#read-the-original-chat) |
 | See whether someone has picked up the work | Check the recipient’s last reported status before sending. Afterwards, track arrival, queuing, reads, progress and replies separately. If plans change, request a recall of unread mail or send a correction. Archive letters you want to keep locally. [Mail status](design/mail-lifecycle.md#english) · [Retention and archiving](design/mail-retention.md#english) |
-| Bring source material into a conversation | Read an authorized browser tab or Windows app window, fill in a field or press a button, then check the result. If a client offers readable transcripts or an export, look up what was said in the original chat. [Pages and windows](product/README.en.md#read-web-pages-and-application-windows) · [Reading the original chat](#read-the-original-chat) |
+| Read and use a web page | Share an open tab with xdev or have it open a new one. An AI can read the headings and text the page exposes and send a passage with its source to another chat. It can also follow a link, fill in a form and read back the result after submission. [Working with web pages](product/README.en.md#read-web-pages-and-application-windows) |
+| Read and operate a Windows app | Through Windows accessibility, an AI can read the text, control names and states a window exposes. For example, it can tell whether **Export** is enabled, activate the button by its identifier and read the app’s response without locating it in a screenshot. [Working with windows](product/README.en.md#read-web-pages-and-application-windows) |
 | Work on another computer | Browse, edit and transfer files in either direction. Run commands on a paired Windows PC or in its WSL environment. Start long jobs in the background, check their logs and retrieve the results. [Files and jobs](product/README.en.md#files-and-jobs) |
 | Reach a chat on another network | Windows and Linux messaging endpoints can send mail directly over paired SSH or through your own private GitHub repository, which temporarily holds end-to-end encrypted mail. Apps that handle incoming mail events can wake an idle chat. [Cross-network routes](design/session-relay.md) · [Connecting cloud chats](design/paired-folder-mail.md) |
 
@@ -76,7 +77,7 @@ Use `xdev file read` to read a range of lines from an existing transcript on the
 - **Local MCP** uses the offline Python dependencies included in the installer archive. Receiving an incoming letter in an existing chat also requires a delivery mode supported by that client. [Third-party components and licenses](product/AI-DEPLOY.en.md#third-party-components)
 - **Optional features** have their own requirements. Windows background jobs use Task Scheduler. Linux commands run in a WSL distribution installed on the target PC. NATS JetStream is required only if you choose broker-based message delivery.
 
-Browser actions require OpenCode Browse and a paired browser extension. Windows app actions use the controls the app exposes through Windows accessibility.
+Browser access requires OpenCode Browse and a paired browser extension. A Windows app must be running on a signed-in desktop that xdev can access. The receiving device can grant remote read-only or interactive access separately for web pages and Windows apps.
 
 ## Version updates
 

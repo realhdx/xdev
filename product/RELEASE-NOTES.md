@@ -1,8 +1,10 @@
-# xdev Windows Pair 1.1.0
+# xdev Windows Pair 1.1.1
 
 **简体中文** · [English](RELEASE-NOTES.en.md)
 
-1.1.0 将网页、Windows 应用窗口和跨网络的 AI 聊天接入了原有的文件、任务与会话通信。一个聊天能把材料连同来源寄给指定的另一个聊天，发信人也能沿原信查看处理进度。Windows x64 安装包附带离线依赖。[安装手册](README.md) · [交给 AI 安装](AI-DEPLOY.md) · [选择客户端](CLIENTS.md)
+Windows Pair 1.1.1 按原信编号汇总投递进展。原生唤醒失败后，如果配对网关随后送达、目标聊天读信，发信方仍能看到已确认的结果。查询 `xdev msg status <原信编号>` 即可跟踪同一封信。[信件状态](../design/mail-lifecycle.md)
+
+沿用原安装升级，两端保留配对和聊天绑定。使用配对目录网关的设备还需更新原网关的脚本，重启接收服务，并重连已加载旧版 xdev 的客户端。[升级步骤](README.md#升级回退与换机) · [配对网关](../design/paired-folder-mail.md)
 
 ## 从 1.0.3 升级可使用什么
 

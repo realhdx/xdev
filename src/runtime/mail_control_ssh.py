@@ -63,8 +63,11 @@ def receive(root, wire, *, bound_peer=None):
             raise ValueError("Authenticated mailbox control proof required.")
         peer = directory.identity_key(wire["from"])
         stamp = int(time.time())
+        # Let a peer whose clock runs ahead sample delivery evidence. Never accept an
+        # expired proof; nonces remain reserved through its signed expiration.
+        max_future = 180 if wire["command"].get("op") in ("status", "preflight") else 120
         if (not directory.same(wire["to"], directory.node) or directory.same(peer,directory.node)
-                or type(wire["expires"]) is not int or not stamp <= wire["expires"] <= stamp + 120
+                or type(wire["expires"]) is not int or not stamp <= wire["expires"] <= stamp + max_future
                 or not isinstance(wire["nonce"], str) or not re.fullmatch("[0-9a-f]{32}", wire["nonce"])
                 or not isinstance(wire["mac"], str) or not re.fullmatch("[0-9a-f]{64}", wire["mac"])
                 or wire["provider"] not in ("github", "relay", "sqs")):

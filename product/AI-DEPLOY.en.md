@@ -2,12 +2,12 @@
 
 **English** | [简体中文](AI-DEPLOY.md)
 
-This guide covers xdev Windows Pair 1.1.0. Choose an assistant that can run PowerShell under the designated user account on each target Windows PC. [Manual installation and everyday use](README.en.md)
+This guide covers xdev Windows Pair 1.1.1. Choose an assistant that can run PowerShell under the designated user account on each target Windows PC. [Manual installation and everyday use](README.en.md)
 
 ## A task to give your assistant
 
 ```text
-Download xdev and its checksum from https://github.com/realhdx/xdev/releases/tag/v1.1.0, then follow the included AI deployment guide to install and test it on the Windows devices I specify.
+Download xdev and its checksum from https://github.com/realhdx/xdev/releases/tag/v1.1.1, then follow the included AI deployment guide to install and test it on the Windows devices I specify.
 ```
 
 ## Install or upgrade
@@ -82,7 +82,7 @@ xdev implements device pairing, file and job operations, chat addressing, messag
 
 ### Offline dependencies
 
-xdev's own source uses MPL-2.0. The package root includes the full license in `LICENSE` and the recommended citation in `CITATION.cff`. The 31 upstream Python wheels supplied with Windows Pair 1.1.0 retain their respective licenses. Extract `assets/optional-deps.zip` to find `wheelhouse/`, the per-file SHA-256 manifest and `requirements.lock.txt`. Each wheel is also a ZIP. Inside, `*.dist-info/METADATA` records the version and release details. `*.dist-info/licenses/` and, for some packages, individual source directories contain upstream licenses and notices.
+xdev's own source uses MPL-2.0. The package root includes the full license in `LICENSE` and the recommended citation in `CITATION.cff`. The 31 upstream Python wheels supplied with Windows Pair 1.1.1 retain their respective licenses. Extract `assets/optional-deps.zip` to find `wheelhouse/`, the per-file SHA-256 manifest and `requirements.lock.txt`. Each wheel is also a ZIP. Inside, `*.dist-info/METADATA` records the version and release details. `*.dist-info/licenses/` and, for some packages, individual source directories contain upstream licenses and notices.
 
 | License declared upstream | Package and version |
 | --- | --- |

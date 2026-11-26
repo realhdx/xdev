@@ -4,6 +4,8 @@
 
 ## 中文
 
+Windows Pair 1.1.1 起，发信、回信和 `xdev msg status <原信编号>` 都返回 `delivery`。其中 `state` 汇总这封信在各通道的进展，`evidence` 列出判断依据。中继已接单是 `submitted`，已入收件箱、待会话接纳是 `pending_wake`，宿主排队和接纳分别是 `queued` 和 `accepted`。指定聊天已读显示 `read`，沿原信收到答复显示 `replied`。投递结果不明时显示 `unknown`，有明确拒收或未发出证据时显示 `failed`。按 `retry` 行动：`check_same_id` 表示查原编号，`retry_same_id` 才表示可用原编号重试，`never` 表示无需重发。群信的每个收件人各有一个副本编号。
+
 寄出一份工作请求前，先看**具体收件聊天**能提供什么状态。同一台电脑上的另一个聊天可能仍然空闲。收件方可以声明忙碌、维护或配额受限，并给声明设有效期。结果中保留信息来源、观测时间和有效期；读不到的状态显示未知。静默本身不能说明欠费、离线、拒绝合作或已经完成。
 
 ```powershell
@@ -64,6 +66,8 @@ py -3.14 deploy/mail-retention.py github-status
 更多命令和空间指标见[留存手册](mail-retention.md)。
 
 ## English
+
+Starting with Windows Pair 1.1.1, sending, replying and running `xdev msg status <letter-id>` all return a `delivery` summary. Its `state` reflects the strongest evidence for that copy across routes. `submitted` means a carrier took the letter. `pending_wake` means it reached the mailbox. `queued` and `accepted` describe host placement. `read` confirms that the addressed chat read it, and `replied` confirms a reply to this letter. An uncertain outcome is `unknown`; a confirmed rejection or failure to submit is `failed`. Follow `retry`: look up the original ID for `check_same_id`, retry with that ID only for `retry_same_id`, and leave the letter alone for `never`. Group letters have a separate copy ID for each recipient.
 
 Check the **addressed chat** with `msg preflight` before deciding whether to send. Sending, forwarding and replying also consult known recipient status. An availability declaration belongs to the chat that made it and expires. A host observation carries a timestamp. Over GitHub an explicit check can request a silent refresh; ordinary sends use the available evidence. Silence alone cannot establish a billing issue, refusal or completion.
 

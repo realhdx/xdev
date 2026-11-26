@@ -78,6 +78,9 @@ def status(root, identifier, actor, *, as_device=False):
         route = {"transport": local[1], "submission_status": receipt.get("status", "submission_unconfirmed"),
                  "inbox_status": receipt.get("inbox_status", "unknown"), "session_accepted": receipt.get("session_accepted"),
                  "route_attempts": receipt.get("route_attempts", []), "model_status": "unverified"}
+        for field in ("session_status", "current_turn_accepted", "delivery_receipt"):
+            if field in receipt:
+                route[field] = receipt[field]
     if row is None:
         return {"ok": True, "id": identifier, "status": "outbound_status", **route} if route else unavailable
     if not _can_view(root, actor, as_device, row[0]):

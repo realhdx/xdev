@@ -1,8 +1,10 @@
-# xdev Windows Pair 1.1.0
+# xdev Windows Pair 1.1.1
 
 [简体中文](RELEASE-NOTES.md) · **English**
 
-Version 1.1.0 brings web pages, Windows application windows and chats on other networks into xdev’s file, task and messaging workflows. A chat can send material and its source directly to another chat, then follow the original letter to see how the work is progressing. The Windows x64 kit includes its offline dependencies. [Installation guide](README.en.md) · [Have an AI install xdev](AI-DEPLOY.en.md) · [Find your client](CLIENTS.en.md)
+Windows Pair 1.1.1 tracks delivery across routes by the original letter ID. If a native wake-up attempt fails and the addressed chat later reads the letter through a paired gateway, the sender can see the confirmed read. Run `xdev msg status <letter-id>` to follow the same letter. [Mail status](../design/mail-lifecycle.md)
+
+Upgrade each installation in place to keep its device pairings and chat bindings. If you use a paired-folder gateway, update its installed scripts and restart its receiver service. Reconnect clients that still have the previous xdev runtime loaded. [Upgrade steps](README.en.md#upgrade-rollback-and-migration) · [Paired gateway](../design/paired-folder-mail.md)
 
 ## What’s new since 1.0.3
 

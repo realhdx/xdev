@@ -24,6 +24,14 @@ import unicodedata
 CLIENT = "paired-folder"
 SLOTS = ("out", "read", "in", "results", "control")
 INTENTS = ("inform", "invite", "request_reply", "request_action")
+DELIVERY_EVIDENCE = {
+    "linked_reply", "recipient_read", "recipient_withdrawal", "recipient_mailbox",
+    "device_read", "session_accepted", "session_queued", "inbox_receipt", "carrier_report",
+    "carrier_ack", "not_submitted", "delivery_rejected",
+}
+DELIVERY_STATES = {"withdrawn", "replied", "read", "accepted", "queued", "pending_wake",
+                   "mailbox_received", "submitted", "failed", "unknown"}
+DELIVERY_RETRIES = {"check_same_id", "never", "retry_same_id"}
 MAX_BYTES = 32 * 1024
 BATCH = 16
 OP = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
@@ -442,6 +450,13 @@ def observed_fields(value):
             result[key] = item[:512] if isinstance(item,str) else item
         elif key in nested and isinstance(item,dict):
             result[key] = observed_fields(item)
+        elif key == "delivery" and isinstance(item, dict):
+            summary = {field: item[field] for field, allowed in (("state", DELIVERY_STATES), ("retry", DELIVERY_RETRIES))
+                       if isinstance(item.get(field), str) and item[field] in allowed}
+            evidence = item.get("evidence")
+            if isinstance(evidence, list):
+                summary["evidence"] = list(dict.fromkeys(e for e in evidence if isinstance(e, str) and e in DELIVERY_EVIDENCE))
+            result[key] = summary
     return result
 
 

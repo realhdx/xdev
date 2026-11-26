@@ -4,7 +4,7 @@
 
 xdev 让指定的 AI 聊天彼此寄信、沿原信回复，也能通过同一套 CLI 和 MCP 工具操作文件、运行任务。聊天可以在同一台 Windows 设备上，也可以位于已配对的不同设备上。
 
-本手册对应 `windows-pair` 1.1.0。[客户端接入与验证](CLIENTS.md) · [本版新功能](RELEASE-NOTES.md) · [版本记录](CHANGELOG.md)
+本手册对应 `windows-pair` 1.1.1。[客户端接入与验证](CLIENTS.md) · [本版新功能](RELEASE-NOTES.md) · [版本记录](CHANGELOG.md)
 
 从[网页和 Windows 窗口](#读取网页与应用窗口)读取材料后，可以把摘录、来源和问题寄给指定聊天。随包手册还涵盖[原聊天自动寻址](../design/host-discovery.md)、[空闲唤醒](../design/paired-folder-mail.md)、[多人交接](../design/mail-lifecycle.md)和[归档恢复](../design/mail-retention.md)。WorkBuddy 插件附有[原聊天查信与回信指引](../integrations/workbuddy/skills/xdev-session-mail/SKILL.md)。
 
@@ -18,7 +18,7 @@ xdev 让指定的 AI 聊天彼此寄信、沿原信回复，也能通过同一�
 - **[交给 AI 安装](AI-DEPLOY.md)**。把下面一句话发给能操作目标电脑的助手。
 
 ```text
-请从 https://github.com/realhdx/xdev/releases/tag/v1.1.0 下载 xdev 安装包和校验文件，按包内 AI 部署指南在我指定的 Windows 设备上安装并验证。
+请从 https://github.com/realhdx/xdev/releases/tag/v1.1.1 下载 xdev 安装包和校验文件，按包内 AI 部署指南在我指定的 Windows 设备上安装并验证。
 ```
 
 ## 运行条件
@@ -49,10 +49,10 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes lab-ssh "python --version"
 
 ### 2. 校验并解压
 
-从同一发行版本下载 `xdev-windows-pair-1.1.0.zip` 和同名 `.zip.sha256` 校验文件。部署多台时使用同一份包。在每台目标电脑的下载目录运行下面的 PowerShell。若没有 `py` 启动器，以 `& '解释器的完整路径'` 替换示例中的 `py -3.14`。
+从同一发行版本下载 `xdev-windows-pair-1.1.1.zip` 和同名 `.zip.sha256` 校验文件。部署多台时使用同一份包。在每台目标电脑的下载目录运行下面的 PowerShell。若没有 `py` 启动器，以 `& '解释器的完整路径'` 替换示例中的 `py -3.14`。
 
 ```powershell
-$zip = (Resolve-Path '.\xdev-windows-pair-1.1.0.zip').Path
+$zip = (Resolve-Path '.\xdev-windows-pair-1.1.1.zip').Path
 $expected = ((Get-Content -LiteralPath ($zip + '.sha256') -TotalCount 1) -split '\s+')[0]
 if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ine $expected) { throw '发布包校验失败' }
 $kit = Join-Path (Split-Path $zip) ([IO.Path]::GetFileNameWithoutExtension($zip))
@@ -84,7 +84,7 @@ py -3.14 -I -B -X utf8 install.py install --expect-current none --name 实验室
 
 ### 4. 验证安装
 
-在每台已安装设备上，`--version` 应显示 `xdev 1.1.0 (windows-pair)`，`who` 应返回本机身份，`status` 应返回 `active_verified: true`。日常使用稳定入口 `xdev.cmd`，解压目录留作维护。
+在每台已安装设备上，`--version` 应显示 `xdev 1.1.1 (windows-pair)`，`who` 应返回本机身份，`status` 应返回 `active_verified: true`。日常使用稳定入口 `xdev.cmd`，解压目录留作维护。
 
 ```powershell
 $xdev = Join-Path $env:LOCALAPPDATA 'CrossDeviceCollab\xdev.cmd'

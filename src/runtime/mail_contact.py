@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS presence(address TEXT PRIMARY KEY, state TEXT, note T
 CREATE TABLE IF NOT EXISTS observations(address TEXT PRIMARY KEY, evidence TEXT);
 CREATE TABLE IF NOT EXISTS dispatches(id TEXT PRIMARY KEY, author TEXT, recipient TEXT, peer TEXT,
   intent TEXT, issued TEXT, submitted TEXT, recorded TEXT, parent TEXT);
+CREATE TABLE IF NOT EXISTS letter_evidence(id TEXT, author TEXT, recipient TEXT, received TEXT,
+  read_at TEXT, withdrawn TEXT, reply_json TEXT, PRIMARY KEY(id,author,recipient));
 """
 
 
@@ -157,8 +159,10 @@ def before_send(root, envelope, intent):
 
 def after_send(root, identifier, result):
     fields = ("transport", "status", "inbox_status", "session_status", "session_accepted",
-              "current_turn_accepted", "error_code")
+              "current_turn_accepted", "return_channel", "error_code")
     evidence = {k: result[k] for k in fields if k in result}
+    if result.get("delivery_receipt", {}).get("scope"):
+        evidence["delivery_receipt"] = {"scope": result["delivery_receipt"]["scope"]}
     with closing(database(root)) as db, db:
         db.execute("BEGIN IMMEDIATE")
         previous = db.execute("SELECT submitted FROM dispatches WHERE id=?", (identifier,)).fetchone()
@@ -170,7 +174,7 @@ def after_send(root, identifier, result):
                 return
             if saved.get("session_accepted") is True and evidence.get("session_accepted") is not True:
                 return
-            if saved.get("status") == "broker_acknowledged" and not result.get("ok"):
+            if saved.get("status") in {"broker_acknowledged", "queue_acknowledged"} and not result.get("ok"):
                 return
         db.execute("UPDATE dispatches SET submitted=?,recorded=? WHERE id=?", (json.dumps(evidence), now(), identifier))
 
@@ -214,3 +218,33 @@ def related_reply(root, identifier, actor, target):
                     and messages.matches_participant(json.loads(destination or "null"), actor, root=root, exact=True)):
                 return {"id": mid, "reply_to": identifier, "received_at": recv, "source": "local_addressed_inbox"}
     return None
+
+
+def confirmed_delivery(root, identifier, actor, target, observation, linked):
+    """Retain immutable, body-free facts about this exact exchange across failed status probes."""
+    if not actor or not target:
+        return observation, linked
+    key = (identifier, address_key(root, actor), address_key(root, target))
+    observed = observation or {}
+    verified = (observed.get("ok") is True and observed.get("id") == identifier
+                and observed.get("scope") == "recipient_mailbox")
+    received = observed.get("received_at") if verified else None
+    read = observed.get("read_at") if verified and observed.get("read_scope") == "session" else None
+    withdrawn = observed.get("withdrawn_at") if verified else None
+    reply = json.dumps(linked) if linked and linked.get("reply_to") == identifier else None
+    with closing(database(root)) as db, db:
+        if any((received, read, withdrawn, reply)):
+            db.execute("""INSERT INTO letter_evidence VALUES(?,?,?,?,?,?,?)
+                ON CONFLICT(id,author,recipient) DO UPDATE SET
+                received=coalesce(received,excluded.received),read_at=coalesce(read_at,excluded.read_at),
+                withdrawn=coalesce(withdrawn,excluded.withdrawn),reply_json=coalesce(reply_json,excluded.reply_json)""",
+                       (*key, received, read, withdrawn, reply))
+        row = db.execute("SELECT * FROM letter_evidence WHERE id=? AND author=? AND recipient=?", key).fetchone()
+    if not row:
+        return observation, linked
+    evidence = dict(observed) if verified else {}
+    evidence.update(id=identifier, ok=True, scope="recipient_mailbox", received_at=row["received"],
+                    withdrawn_at=row["withdrawn"])
+    if row["read_at"]:
+        evidence.update(read_at=row["read_at"], read_scope="session")
+    return evidence, linked or json.loads(row["reply_json"] or "null")

@@ -7,7 +7,7 @@ import sys
 
 from src.adapters import sessions
 from src.adapters.delivery_contract import select_delivery
-from src.runtime import messages, transport
+from src.runtime import mail_contact, messages, outbox, transport
 from src.runtime.correspondence import address_key, normalize_group, stable_id, batch_state, device_key, plan_group
 from src.runtime.letter_attachment import make_attachment
 from src.runtime.subjects import normalize_subject, preview_subject
@@ -240,7 +240,7 @@ def deliver(root, args):
     fields = ("id", "host", "client", "session", "ok", "status", "transport", "route_attempts", "inbox_status", "session_status",
               "current_turn_accepted", "return_session_status", "return_address_known", "bidirectional_ready",
               "return_error_code", "return_next_action", "error_code", "error_message", "session_accepted",
-              "communication_intent", "intent_delivery")
+              "communication_intent", "intent_delivery", "delivery", "submission_status")
     fingerprint = stable_id("plan", plan_group(group, root), args.text, args.subject, args.kind, link, (attachment or {}).get("sha256"),
                             device_key(args.return_host, root), args.return_client, args.return_session, args.return_codex_home,
                             args.return_claude_home, args.return_queue, args.one_way, args.steer, args.queue, args.idle_only)
@@ -253,6 +253,20 @@ def deliver(root, args):
     def submit(single):
         if single.id in done:
             saved = done[single.id]
+            dispatch = mail_contact.dispatch(root, single.id, actor)
+            if dispatch and dispatch.get("recipient"):
+                from src.cli import contact
+                target = dispatch["recipient"]
+                observed = None
+                if transport.directory(root).same(target["device"], origin):
+                    observed = contact.remote_or_local(root, "local", {"op": "status", "id": single.id,
+                                                       "actor": actor, "target": target})
+                latest, _ = contact.delivery_view(root, single.id, actor, target, dispatch["submission"],
+                                                  outbox.status(root, single.id, actor), observed)
+                if latest["state"] in {"read", "replied", "withdrawn"}:
+                    saved = {**saved, "submission_status": saved.get("submission_status", saved.get("status")),
+                             "status": latest["state"]}
+                saved = {**saved, "delivery": latest}
             return {"preflight": {"status": "not_recorded"}, "communication_intent": args.intent,
                     "intent_delivery": "unspecified" if args.intent is None else "unverified",
                     **saved, "previously_accepted": True}
@@ -272,7 +286,9 @@ def deliver(root, args):
         result = [future.result() for future in futures]
     ok = all(r.get("ok") for r in result)
     status = "group_delivered" if ok else "group_incomplete"
-    if ok and any(r.get("status") in {"broker_acknowledged", "queue_acknowledged"} for r in result):
+    if ok and any(r.get("delivery", {}).get("state", r.get("status"))
+                  in {"submitted", "pending_wake", "broker_acknowledged", "queue_acknowledged"}
+                  for r in result):
         status = "group_submitted"
     return {"ok": ok, "status": status, "id": args.id,
             "group": group, "deliveries": result, "sender_endpoint": actor}

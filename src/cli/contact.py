@@ -146,6 +146,53 @@ def remote_or_local(root, carrier, payload):
     return {"ok": False, "status":"control_unavailable", "transport": carrier}
 
 
+def status_checks(root, carrier, command, *, automatic):
+    """Use the strongest observation for this ID across the configured control paths."""
+    from src.runtime import mail_routes
+    checks = []
+    routes = [carrier]
+    if automatic and carrier != "local":
+        try:
+            candidates = mail_routes.candidates(root, command["target"]["device"], "auto")
+        except (ValueError, OSError):
+            candidates = ()
+        for alternative in candidates:
+            if alternative in {"github", "ssh", "direct"} and alternative not in routes:
+                routes.append(alternative)
+    chosen = None
+    best = -1
+    for route in routes:
+        result = remote_or_local(root, route, command)
+        checks.append({"transport": route, "status": result.get("status", "unknown")})
+        snapshot = result.get("evidence") or result
+        rank = int(result.get("status") == "requested")
+        if (snapshot.get("ok") is True and snapshot.get("scope") == "recipient_mailbox"
+                and snapshot.get("id") == command["id"]):
+            if snapshot.get("withdrawn_at") or (snapshot.get("read_at") and snapshot.get("read_scope") == "session"):
+                return result, checks
+            rank = 3 if snapshot.get("read_at") else 2
+        if rank > best:
+            chosen, best = result, rank
+    return chosen, checks
+
+
+def delivery_view(root, identifier, actor, target, submission, previous, recipient_result=None, *, addressed=True):
+    from src.runtime.delivery_status import summarize
+    observation = recipient_result or {}
+    linked = contact.related_reply(root, identifier, actor, target)
+    observed, linked = contact.confirmed_delivery(root, identifier, actor, target,
+                                                 observation.get("evidence") or observation, linked)
+    facts = {**submission, "id": identifier}
+    if previous.get("submission_status") and not facts.get("status"):
+        facts["status"] = previous["submission_status"]
+    for field in ("inbox_status", "session_status", "session_accepted", "delivery_receipt"):
+        if field in previous and field not in facts:
+            facts[field] = previous[field]
+    verdict = summarize(facts, report=previous.get("report"), observation=observed,
+                        linked_reply=linked, addressed=addressed)
+    return verdict, linked
+
+
 def handle(root, args):
     from src.cli.main import _address, _actor
     from src.runtime import mail_lifecycle
@@ -173,10 +220,15 @@ def handle(root, args):
         if args.action == "status" and not previous.get("ok") and actor:
             own = mail_lifecycle.apply(root,{"op":"status","actor":actor,"id":args.id})
             if own.get("ok"):
-                return own
+                from src.runtime.delivery_status import summarize
+                return {**own, "delivery": summarize({"id": args.id}, observation=own)}
+        if args.action == "status" and previous.get("ok"):
+            delivery, _ = delivery_view(root, args.id, actor, None, {}, previous, addressed=False)
+            return {**previous, "query_status": previous["status"], "status": delivery["state"], "delivery": delivery}
         return previous if args.action == "status" else {"ok":False,"status":"outgoing_message_not_found"}
     target = details["recipient"]
     carrier = carrier_for(root, details["peer"], args.transport, previous.get("transport")) if details["peer"] else "unknown"
+    checks = []
     if target and actor:
         cmd = {"op":args.action,"actor":contact.identity(root,actor),"target":target,"id":args.id}
         for field in ("operation_id", "expected_version"):
@@ -187,7 +239,10 @@ def handle(root, args):
             if not replacement or not messages.matches_participant(target,replacement["recipient"],exact=True,root=root):
                 return {"ok":False,"status":"replacement_outside_exchange"}
             cmd["replacement_id"] = args.replacement_id
-        recipient_result = remote_or_local(root,carrier,cmd)
+        if args.action == "status":
+            recipient_result, checks = status_checks(root, carrier, cmd, automatic=args.transport == "auto")
+        else:
+            recipient_result = remote_or_local(root,carrier,cmd)
     else:
         recipient_result = {"ok":False,"status":"exact_chat_required"}
     if args.action != "status":
@@ -204,7 +259,9 @@ def handle(root, args):
             previous["transport_retention"] = github_mail.retention_for(root, details["peer"], args.id)
         except (KeyError, OSError, RuntimeError, ValueError, sqlite3.Error):
             previous["transport_retention"] = {"state": "unknown", "source": "private_github_mailbox"}
-    linked = contact.related_reply(root,args.id,actor,target)
+    submission = details["submission"]
+    delivery, linked = delivery_view(root, args.id, actor, target, submission, previous, recipient_result,
+                                     addressed=bool(target) and submission.get("return_channel") != "tool_result")
     observation = recipient_result.get("evidence") or recipient_result
     if observation.get("withdrawn_at"):
         previous["available_to_addressed_chat"] = False
@@ -217,10 +274,13 @@ def handle(root, args):
         choices = ["review_reported_completion"]
     elif observation.get("work_state") == "blocked":
         choices = ["review_recipient_report"]
-    elif previous.get("status") == "outbound_status" or not observation.get("read_at"):
+    elif delivery["retry"] == "check_same_id":
         choices = ["check_same_message_id_later"]
+    elif delivery["retry"] == "retry_same_id":
+        choices = ["retry_same_id"]
     else:
         choices = []
-    return {**previous, "dispatch": details, "recipient_observation": recipient_result,
+    return {**previous, "query_status": previous["status"], "status": delivery["state"], "delivery": delivery,
+            "dispatch": details, "recipient_observation": recipient_result, "recipient_checks": checks,
             "linked_reply": linked, "reply_evidence": "linked_reply_received" if linked else "unverified",
             "queried_at": contact.now(), **({"next_options": choices} if choices else {})}

@@ -4,7 +4,7 @@
 
 xdev lets AI chats send messages to one another and reply to the original sender. The same CLI and MCP tools also handle files and jobs. The chats can share a Windows device or run on different devices that have been paired.
 
-This guide covers `windows-pair` 1.1.0. [AI client setup and checks](CLIENTS.en.md) · [What's new](RELEASE-NOTES.en.md) · [Changelog](CHANGELOG.en.md)
+This guide covers `windows-pair` 1.1.1. [AI client setup and checks](CLIENTS.en.md) · [What's new](RELEASE-NOTES.en.md) · [Changelog](CHANGELOG.en.md)
 
 Use [web pages and Windows application windows](#read-web-pages-and-application-windows) to gather material, then send a passage with its source and a question to the chat that needs it. The included guides cover [finding the original chat](../design/host-discovery.md), [waking an idle chat](../design/paired-folder-mail.md), [concurrent handoffs](../design/mail-lifecycle.md) and [archiving and restoring letters](../design/mail-retention.md). The WorkBuddy plugin also includes [instructions for reading and replying in the addressed chat](../integrations/workbuddy/skills/xdev-session-mail/SKILL.md).
 
@@ -18,7 +18,7 @@ Check a chat’s availability before sending, then follow the same letter throug
 - **[Ask an AI assistant to install xdev](AI-DEPLOY.en.md).** Send the line below to an assistant with access to the target PCs.
 
 ```text
-Download xdev and its checksum from https://github.com/realhdx/xdev/releases/tag/v1.1.0, then follow the included AI deployment guide to install and test it on the Windows devices I specify.
+Download xdev and its checksum from https://github.com/realhdx/xdev/releases/tag/v1.1.1, then follow the included AI deployment guide to install and test it on the Windows devices I specify.
 ```
 
 ## Requirements
@@ -49,10 +49,10 @@ ssh -o BatchMode=yes -o StrictHostKeyChecking=yes lab-ssh "python --version"
 
 ### 2. Verify and extract the release
 
-Download `xdev-windows-pair-1.1.0.zip` and its matching `.zip.sha256` checksum file from the same release. Use the same archive for all selected PCs. Run the following in PowerShell from the downloads directory on each target PC. If the `py` launcher is unavailable, replace `py -3.14` with `& 'full path to the interpreter'`.
+Download `xdev-windows-pair-1.1.1.zip` and its matching `.zip.sha256` checksum file from the same release. Use the same archive for all selected PCs. Run the following in PowerShell from the downloads directory on each target PC. If the `py` launcher is unavailable, replace `py -3.14` with `& 'full path to the interpreter'`.
 
 ```powershell
-$zip = (Resolve-Path '.\xdev-windows-pair-1.1.0.zip').Path
+$zip = (Resolve-Path '.\xdev-windows-pair-1.1.1.zip').Path
 $expected = ((Get-Content -LiteralPath ($zip + '.sha256') -TotalCount 1) -split '\s+')[0]
 if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ine $expected) { throw 'Release archive verification failed' }
 $kit = Join-Path (Split-Path $zip) ([IO.Path]::GetFileNameWithoutExtension($zip))
@@ -84,7 +84,7 @@ If xdev is already installed, follow [Upgrade, rollback and migration](#upgrade-
 
 ### 4. Verify the installation
 
-On each installed device, `--version` should report `xdev 1.1.0 (windows-pair)`, `who` should return the local identity, and `status` should report `active_verified: true`. Use the stable `xdev.cmd` entry point for daily work. Keep the extracted directory for maintenance.
+On each installed device, `--version` should report `xdev 1.1.1 (windows-pair)`, `who` should return the local identity, and `status` should report `active_verified: true`. Use the stable `xdev.cmd` entry point for daily work. Keep the extracted directory for maintenance.
 
 ```powershell
 $xdev = Join-Path $env:LOCALAPPDATA 'CrossDeviceCollab\xdev.cmd'

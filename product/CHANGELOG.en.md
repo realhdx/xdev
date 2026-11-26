@@ -2,6 +2,10 @@
 
 [简体中文](CHANGELOG.md) · **English**
 
+## Windows Pair 1.1.1 · 2026-11-27
+
+Senders can check delivery across routes using the original letter ID. A read by the addressed chat remains visible even if an earlier wake-up attempt failed. [Delivery status and upgrading](RELEASE-NOTES.en.md)
+
 ## Windows Pair 1.1.0 · 2026-11-22
 
 The first stable 1.1 release adds web and Windows controls, delivery to existing chats across networks, per-recipient progress, recall and archiving. [Release notes](RELEASE-NOTES.en.md)

@@ -444,6 +444,15 @@ def _extensions_received(delivered, attachment, group, root=None):
 
 
 def _send(root, args, *, attachment=None, group=None, linked_to=None):
+    result = _submit_letter(root, args, attachment=attachment, group=group, linked_to=linked_to)
+    if "delivery" not in result and result.get("inbox_status") == "not_attempted":
+        from src.runtime.delivery_status import summarize
+        result.setdefault("id", args.id)
+        result["delivery"] = summarize(result)
+    return result
+
+
+def _submit_letter(root, args, *, attachment=None, group=None, linked_to=None):
     from src.runtime import messages
     from src.runtime.subjects import normalize_subject, preview_subject
     origin = transport.node(root)
@@ -652,7 +661,25 @@ def _send(root, args, *, attachment=None, group=None, linked_to=None):
     mail_contact.after_send(root, envelope["id"], result)
     delivery = result.get("inbox_delivery", result)
     received_intent = (delivery.get("message") or {}).get("communication_intent")
-    return {**result, "preflight": preflight, "communication_intent": args.intent,
+    observed = None
+    if destination and author and (result.get("route_reused") or result.get("inbox_status") == "duplicate"):
+        command = {"op": "status", "actor": mail_contact.identity(root, author),
+                   "target": mail_contact.identity(root, destination), "id": envelope["id"]}
+        observed, _ = contact.status_checks(root, result.get("transport", route_name), command,
+                                            automatic=args.transport == "auto")
+    previous = outbox.status(root, envelope["id"], author, as_device=args.as_device)
+    verdict, _ = contact.delivery_view(root, envelope["id"], author, destination, result, previous,
+                                       observed, addressed=notify)
+    if verdict["state"] in {"read", "replied", "withdrawn", "pending_wake"}:
+        result = dict(result)
+        result.update(ok=True, submission_status=result["status"], status=verdict["state"])
+        # Keep the native error in its per-channel record. Its remediation does not
+        # describe the aggregate outcome, and must not instruct the caller to resubmit.
+        for field in ("error_code", "error_message", "next_action"):
+            result.pop(field, None)
+        if verdict["state"] == "pending_wake":
+            result["next_action"] = "Query msg status with this message ID. The recipient mailbox has the letter."
+    return {**result, "delivery": verdict, "preflight": preflight, "communication_intent": args.intent,
             "intent_delivery": "unspecified" if args.intent is None else
                                "recipient_copy_confirmed" if received_intent == args.intent else "unverified"}
 
@@ -868,6 +895,8 @@ def _parse_and_run(root, argv, *, parser=None):
                 # The response completes this exchange even if native push is
                 # still unverified. Preserve the original admission evidence.
                 result.update(ok=True, submission_status=result["status"], status="reply_received")
+                from src.runtime.delivery_status import summarize
+                result["delivery"] = summarize(result, linked_reply=waited["message"])
             if waited["message"] is None:
                 result["reply_wait"]["resume_args"] = ["msg", "wait", "--reply-to", args.id,
                                                        "--from", query["from"], "--substantive-only"]

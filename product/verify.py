@@ -120,6 +120,8 @@ def runtime_filenames(version="1.0.0"):
         files.update({"src/cli/contact.py", "src/runtime/mail_control.py", "src/runtime/mail_control_ssh.py",
                       "src/runtime/mail_lifecycle.py", "src/runtime/mail_retention.py", "src/runtime/mail_contact.py",
                       "src/runtime/github_capacity.py"})
+    if version_components(version) >= (1, 1, 1):
+        files.add("src/runtime/delivery_status.py")
     return files
 
 

@@ -1,6 +1,6 @@
 # xdev — A channel for collaboration between AI chats
 
-**English** · [简体中文](README.md)　|　[Features](#what-you-can-do-with-xdev) · [Will my app work?](#will-it-work-with-my-ai-app) · [Install](#getting-started)
+**English** · [简体中文](README.md)　|　[Features](#what-you-can-do-with-xdev) · [Will my app work?](#will-it-work-with-my-ai-app) · [Install on Windows](#windows-pair) · [Install on Linux](#linux-mail)
 
 Generative AI has lowered the barriers to research and creative work. More people can put their talents to work and turn an idea into something real. Twice the computing power can mean twice the output. Yet you have no extra time to review it. That imbalance turns time saved in creation into pressure at review. Early factories in the Industrial Revolution faced a similar bottleneck: machines sped up, but someone still had to move each piece to the next station. Today, AI tools work in parallel, then queue up for someone to pass a message. The promise of artificial intelligence has become intelligence plus manual labor. The creator is back on the assembly line, tightening one screw as the next comes within reach.
 
@@ -8,7 +8,7 @@ Generative AI has lowered the barriers to research and creative work. More peopl
 
 xdev lets messages flow freely between AI chats, across apps and devices. You can put the copying and pasting aside. One AI hands its work directly to another. Messages flow both ways without a scramble for the channel, and the line keeps moving on its own.
 
-For cross-device work, Windows PCs connect over SSH and SFTP. Through the command line or a local Model Context Protocol (MCP) connection, an AI assistant can browse, edit and transfer files, run commands on the other PC in Windows or WSL, and start background jobs, check their logs and retrieve the results. If the other client keeps readable transcripts or can export a chat, the assistant taking over can consult the original conversation with permission. It can check what was decided and why, making the handoff more reliable.
+With the Linux Mail preview, a Linux program and a paired Windows PC can exchange letters in both directions and reply to the original. Windows Pair connects Windows PCs over SSH and SFTP. Through the command line or a local Model Context Protocol (MCP) connection, an AI assistant can browse, edit and transfer files, run commands on the other PC in Windows or WSL, and start background jobs, check their logs and retrieve the results. If the other client keeps readable transcripts or can export a chat, the assistant taking over can consult the original conversation with permission. It can check what was decided and why, making the handoff more reliable.
 
 Now there’s time to linger over what you’ve made, and room to wonder where you might go next.
 
@@ -22,7 +22,7 @@ Say an assistant on your laptop reads data from a web page, sends the file to a 
 | Read and operate a Windows app | Read the text and control states a window exposes through Windows accessibility. An assistant can tell whether **Export** is enabled, activate it by its identifier and read the response without locating it in a screenshot. [App windows](product/README.en.md#read-web-pages-and-application-windows) |
 | Put another computer to work | Browse, edit and transfer files in either direction. Run commands on a paired Windows PC or in WSL. Leave long jobs running in the background, then check their logs and retrieve the results. [Files and jobs](product/README.en.md#files-and-jobs) |
 | Hand work to the right chat | Address a chat by device, app and chat ID, even within one app on one PC. Send to a group, forward the original letter, reply to the sender or write to the original author. [Chat messaging](product/README.en.md#send-mail-to-a-specific-chat) · [Read the original chat](#read-the-original-chat) |
-| Reach a chat on another network | Windows and Linux messaging endpoints can send mail over paired SSH or through your own private GitHub repository, which temporarily holds end-to-end encrypted mail. [Cross-network routes](design/session-relay.md) · [Cloud chats](design/paired-folder-mail.md) |
+| Reach a chat on another network | Paired devices can send mail directly over SSH. If a direct connection is unavailable, you can configure a private GitHub mailbox to hold end-to-end encrypted letters temporarily. Cloud chats can also connect through a paired gateway. [Cross-network routes](design/session-relay.md) · [Cloud chats](design/paired-folder-mail.md) |
 | See whether the work has been picked up | Check the recipient’s last reported status before sending. Track arrival, queuing, reads, progress and replies. If plans change, request a recall of unread mail or send a correction. Archive important letters locally. [Mail status](design/mail-lifecycle.md#english) · [Retention and archiving](design/mail-retention.md#english) |
 
 ## Will it work with my AI app?
@@ -35,19 +35,23 @@ AI tools with local MCP support or permission to run local commands can use xdev
 
 ## Getting started
 
-For messaging on Linux, the [Linux Mail preview](https://github.com/realhdx/xdev/releases/tag/linux-mail-v1.1.0-preview.1) uses the same letter format as Windows Pair. [Linux installation and pairing](linux-mail/README.en.md)
+### Linux Mail
 
-The Windows package requires Windows x64, 64-bit CPython 3.14 and Windows PowerShell. Choose either installation method.
+The Linux messaging preview uses Python 3 and has been tested on Ubuntu under WSL and on a cloud-hosted Debian 13 system. Download the `.tar.gz` and its matching `.sha256` file, then follow the guide to unpack it and send your first letter. An existing SSH pairing can connect your mailbox to Windows Pair or another Linux host. [Download the preview](https://github.com/realhdx/xdev/releases/tag/linux-mail-v1.1.0-preview.1) · [Linux installation and pairing](linux-mail/README.en.md)
+
+### Windows Pair
+
+The stable release requires Windows x64, 64-bit CPython 3.14 and Windows PowerShell. Choose either installation method.
 
 | Install it yourself | Have an AI install it |
 | --- | --- |
-| Download the Windows Pair ZIP and its matching `.sha256` file from the [latest release](https://github.com/realhdx/xdev/releases/latest). Follow the [installation guide](product/README.en.md). For multiple devices, use the same ZIP on each. | Paste the prompt below into an AI chat that can operate your PCs. The assistant downloads the package, installs xdev and verifies the setup. [AI deployment guide](product/AI-DEPLOY.en.md) |
+| Download the ZIP and its matching `.sha256` file from [Windows Pair 1.1.1](https://github.com/realhdx/xdev/releases/tag/v1.1.1). Follow the [installation guide](product/README.en.md). For multiple devices, use the same ZIP on each. | Paste the prompt below into an AI chat that can operate your PCs. The assistant downloads the package, installs xdev and verifies the setup. [AI deployment guide](product/AI-DEPLOY.en.md) |
 
 ```text
-Get the latest release of xdev from https://github.com/realhdx/xdev and follow the included AI deployment guide to install and verify it on the Windows devices I specify.
+Download the latest stable Windows Pair package from https://github.com/realhdx/xdev/releases and follow its AI deployment guide to install and verify xdev on the Windows devices I specify.
 ```
 
-### Requirements
+#### Requirements
 
 Remote file transfers and commands use the receiving PC’s paired SSH/SFTP connection. Browser access requires OpenCode Browse and a paired extension. Windows apps must run on an accessible signed-in desktop. The receiver can grant remote read or interaction permissions separately for tabs and windows. The package includes offline dependencies for local MCP. [Full requirements and optional components](product/README.en.md#requirements)
 
@@ -79,7 +83,7 @@ Use `xdev file read` to read a range of lines from an existing transcript on the
 
 ## Version updates
 
-[Latest release and downloads](https://github.com/realhdx/xdev/releases/latest) · [Release notes](product/RELEASE-NOTES.en.md) · [Changelog](product/CHANGELOG.en.md)
+[All releases and downloads](https://github.com/realhdx/xdev/releases) · [Windows Pair release notes](product/RELEASE-NOTES.en.md) · [Changelog](product/CHANGELOG.en.md)
 
 ## Contributing
 

@@ -27,14 +27,23 @@ def _schema(db):
                PRIMARY KEY(id,opid))""")
 
 
-def _snapshot(db, row):
+def _snapshot(db, row, root, receiver):
     work = db.execute("SELECT * FROM mail_observations WHERE id=?", (row["id"],)).fetchone()
     links = db.execute("SELECT revision,operation,at FROM mail_revisions WHERE original=? ORDER BY rowid",
                        (row["id"],)).fetchall()
     parent = db.execute("SELECT original,operation,at FROM mail_revisions WHERE revision=?", (row["id"],)).fetchone()
     read_scope = None
     if row["read_at"]:
-        read_scope = "session" if row["read_by_endpoint"] else "device"
+        if row["read_by_endpoint"] is None:
+            read_scope = "device"
+        else:
+            # Legacy or damaged reader records must not certify a different chat.
+            try:
+                reader = messages.normalize_participant(json.loads(row["read_by_endpoint"]))
+            except (TypeError, ValueError):
+                reader = None
+            if messages.matches_participant(reader, receiver, exact=True, root=root):
+                read_scope = "session"
     return {"ok": True, "status": "observed", "id": row["id"], "scope": "recipient_mailbox",
             "read_scope": read_scope,
             "received_at": row["received_at"], "read_at": row["read_at"], "withdrawn_at": row["withdrawn_at"],
@@ -115,7 +124,7 @@ def apply(root, payload, *, authenticated_peer=None, expected_target=None):
         allowed = {"status": is_author or is_receiver, "progress": is_receiver}
         if not allowed.get(op, is_author):
             return denied
-        current = _snapshot(db, row)
+        current = _snapshot(db, row, root, receiver)
         if op == "status":
             return current
         opid = payload.get("operation_id")
@@ -192,5 +201,5 @@ def _change(db, root, row, current, request, author, receiver):
                    (now,removed_digest(row),new,ident))
     db.execute("INSERT INTO mail_observations(id,version) VALUES(?,1) ON CONFLICT(id) DO UPDATE SET version=version+1",
                (ident,))
-    return {**_snapshot(db, messages._stored_message(db, ident)),
+    return {**_snapshot(db, messages._stored_message(db, ident), root, receiver),
             "status": {"recall":"recalled","replace":"replaced","correct":"corrected","progress":"reported"}[op]}

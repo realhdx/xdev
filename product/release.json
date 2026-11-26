@@ -2,8 +2,8 @@
   "schema": 1,
   "product": "xdev",
   "series": "windows-pair",
-  "version": "1.1.0",
-  "release_date": "2026-11-22",
-  "runtime_sha256": "0a78fdf24871358a44a758c04eb7de186100752d8c8413d715c0f99a181ee1e4",
+  "version": "1.1.1",
+  "release_date": "2026-11-27",
+  "runtime_sha256": "cde4ea5a0eefcd4c319581c2f39621d705454e4b406f5bf2300864fec5567bee",
   "optional_deps_sha256": "4772c1b5c6fef343edfcab3239ce14ac0bf65d46f3e904412d78750e50e36609"
 }

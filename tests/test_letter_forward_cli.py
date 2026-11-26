@@ -307,7 +307,7 @@ class ForwardThroughCli(unittest.TestCase):
             self.assertEqual(recipients[0]["sender_endpoint"], C)
         self.assertEqual(self.addressed(C, "C 答复全体"), [])
 
-    def test_failed_group_member_can_recover_without_waking_an_already_accepted_chat(self):
+    def test_group_member_can_read_after_activation_without_another_copy_or_wake(self):
         self.original()
         attempts = Counter()
         accepted = self.admitted.return_value
@@ -320,19 +320,24 @@ class ForwardThroughCli(unittest.TestCase):
             return accepted
         self.admitted.side_effect = notify
         options = ["forward", "from-A", *target(C), *also(D), "--text", "分户回执"]
-        first = self.call(B, *options)
-        self.assertFalse(first["ok"])
-        self.assertEqual(first["status"], "group_incomplete")
+        first = self.ok(B, *options)
+        self.assertEqual(first["status"], "group_submitted")
         statuses = {item["session"]: item for item in first["deliveries"]}
-        self.assertTrue(statuses[C["session"]]["ok"])
-        self.assertFalse(statuses[D["session"]]["ok"])
+        self.assertEqual(statuses[C["session"]]["delivery"]["state"], "accepted")
+        self.assertEqual(statuses[D["session"]]["delivery"]["state"], "pending_wake")
+        self.assertEqual(statuses[D["session"]]["session_status"], "requires_activation")
         second = self.ok(B, *options)
         self.assertEqual(second["id"], first["id"])
-        self.assertEqual(second["status"], "group_delivered")
+        self.assertEqual(second["status"], "group_submitted")
         retried = {item["session"]: item for item in second["deliveries"]}
-        self.assertTrue(retried[C["session"]]["previously_accepted"])
+        self.assertTrue(all(item["previously_accepted"] for item in retried.values()))
         self.assertEqual(retried[D["session"]]["id"], statuses[D["session"]]["id"])
-        self.assertEqual(attempts, Counter({C["session"]: 1, D["session"]: 2}))
+        self.ok(D, "read", statuses[D["session"]]["id"])
+        third = self.ok(B, *options)
+        self.assertEqual(third["status"], "group_delivered")
+        self.assertEqual({i["session"]: i["delivery"]["state"] for i in third["deliveries"]},
+                         {C["session"]: "accepted", D["session"]: "read"})
+        self.assertEqual(attempts, Counter({C["session"]: 1, D["session"]: 1}))
         self.assertEqual(len(self.addressed(C, "分户回执")), 1)
         self.assertEqual(len(self.addressed(D, "分户回执")), 1)
 

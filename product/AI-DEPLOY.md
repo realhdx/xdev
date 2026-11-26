@@ -2,12 +2,12 @@
 
 [English](AI-DEPLOY.en.md) | **简体中文**
 
-适用于 xdev Windows Pair 1.1.0。所选助手需要能在各目标 Windows 设备的指定用户账户中运行 PowerShell。[手动安装与日常使用](README.md)
+适用于 xdev Windows Pair 1.1.1。所选助手需要能在各目标 Windows 设备的指定用户账户中运行 PowerShell。[手动安装与日常使用](README.md)
 
 ## 可直接交给助手的任务
 
 ```text
-请从 https://github.com/realhdx/xdev/releases/tag/v1.1.0 下载 xdev 安装包和校验文件，按包内 AI 部署指南在我指定的 Windows 设备上安装并验证。
+请从 https://github.com/realhdx/xdev/releases/tag/v1.1.1 下载 xdev 安装包和校验文件，按包内 AI 部署指南在我指定的 Windows 设备上安装并验证。
 ```
 
 ## 安装或升级
@@ -82,7 +82,7 @@ xdev 维护设备配对、文件与任务操作、会话寻址、投递和回执
 
 ### 离线依赖
 
-xdev 自有源码采用 MPL-2.0，许可全文和推荐引用信息分别位于安装包根目录的 `LICENSE` 和 `CITATION.cff`。Windows Pair 1.1.0 随附的 31 个上游 Python wheel 采用各自的许可。解开 `assets/optional-deps.zip` 可查看 `wheelhouse/`、逐文件 SHA-256 清单和 `requirements.lock.txt`。wheel 本身也是 ZIP，其中的 `*.dist-info/METADATA` 记录版本与发布信息，`*.dist-info/licenses/` 和个别源码目录保存上游许可及声明。
+xdev 自有源码采用 MPL-2.0，许可全文和推荐引用信息分别位于安装包根目录的 `LICENSE` 和 `CITATION.cff`。Windows Pair 1.1.1 随附的 31 个上游 Python wheel 采用各自的许可。解开 `assets/optional-deps.zip` 可查看 `wheelhouse/`、逐文件 SHA-256 清单和 `requirements.lock.txt`。wheel 本身也是 ZIP，其中的 `*.dist-info/METADATA` 记录版本与发布信息，`*.dist-info/licenses/` 和个别源码目录保存上游许可及声明。
 
 | 上游包声明的许可 | 包名和版本 |
 | --- | --- |

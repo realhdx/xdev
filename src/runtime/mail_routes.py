@@ -76,7 +76,7 @@ def _claim(root, identifier, route, *, retry_same_route=False):
             receipt = json.loads(saved)
             confirmed = receipt.get("ok") or (receipt.get("inbox_status") in {"received", "duplicate"}
                                                and receipt.get("session_status") != "unknown")
-            if confirmed:
+            if confirmed and receipt.get("session_status") != "requires_receiver_binding":
                 # Existing clients can deliberately repeat a confirmed publication on its original
                 # deduplicating carrier, e.g. to promote an item after the recipient becomes ready.
                 db.execute("UPDATE mail_route_claims SET receipt=NULL WHERE id=?", (identifier,))

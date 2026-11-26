@@ -223,6 +223,11 @@ class ProductPackageTests(unittest.TestCase):
         added = verify.runtime_filenames("1.1.0-preview.11") - verify.runtime_filenames("1.1.0-preview.10")
         self.assertEqual(added, {"src/adapters/mail_arrival.py", "src/adapters/mail_arrival_stdio.py"})
 
+    def test_unified_delivery_status_enters_windows_pair_1_1_1(self):
+        previous = verify.runtime_filenames("1.1.0")
+        self.assertEqual(verify.runtime_filenames("1.1.1"), previous | {"src/runtime/delivery_status.py"})
+        self.assertNotIn("src/runtime/delivery_status.py", previous)
+
     def test_stable_client_guides_and_offline_links_preserve_earlier_package_layouts(self):
         preview = "1.1.0-preview.13"
         earlier = verify.package_filenames(preview)

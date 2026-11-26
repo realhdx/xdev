@@ -35,6 +35,8 @@ xdev 让消息在 AI 聊天之间自由往来，无论它们是否同机、是�
 
 ## 开始使用
 
+在 Linux 上收发信件，可使用与 Windows Pair 共享信件格式的 [Linux 消息端预览包](https://github.com/realhdx/xdev/releases/tag/linux-mail-v1.1.0-preview.1)。[Linux 安装与配对](linux-mail/README.md)
+
 Windows 安装包需要 Windows x64、64 位 CPython 3.14 和 Windows PowerShell。安装方式二选一。
 
 | 自己安装 | 交给 AI 安装 |

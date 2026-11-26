@@ -35,6 +35,8 @@ AI tools with local MCP support or permission to run local commands can use xdev
 
 ## Getting started
 
+For messaging on Linux, the [Linux Mail preview](https://github.com/realhdx/xdev/releases/tag/linux-mail-v1.1.0-preview.1) uses the same letter format as Windows Pair. [Linux installation and pairing](linux-mail/README.en.md)
+
 The Windows package requires Windows x64, 64-bit CPython 3.14 and Windows PowerShell. Choose either installation method.
 
 | Install it yourself | Have an AI install it |

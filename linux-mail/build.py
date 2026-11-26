@@ -12,8 +12,8 @@ import tempfile
 import zipfile
 
 
-CORE = "b31a312d0f7a30a1bce316effe7324beb593a070"
-VERSION = "1.1.0-preview.1"
+CORE = "023b50882d464a2cbf6e74b6b6b83577ab2120b9"
+VERSION = "1.1.1-preview.1"
 NAME = "xdev-linux-mail-" + VERSION
 HERE = Path(__file__).resolve().parent
 

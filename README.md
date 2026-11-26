@@ -37,7 +37,7 @@ Linux 上的程序也能用 Linux Mail（预览版）和配对的 Windows 电脑
 
 ### Linux Mail
 
-Linux 消息端预览版使用 Python 3，已在 WSL 的 Ubuntu 和云端 Debian 13 上实测。下载 `.tar.gz` 和同名的 `.sha256` 校验文件，按指南解压并试寄第一封信。要与 Windows Pair 或另一台 Linux 主机通信，可接入已有的 SSH 配对。[下载预览版](https://github.com/realhdx/xdev/releases/tag/linux-mail-v1.1.0-preview.1) · [Linux 安装与配对](linux-mail/README.md)
+Linux Mail `1.1.1-preview.1` 使用 Python 3，可通过已有的 SSH 配对与 Windows 或另一台 Linux 主机互寄信件。现在，Linux 发信方也能按原信编号查到信件正在等候唤醒、已被指定聊天读取，或已收到关联回信。下载 `.tar.gz` 和同名的 `.sha256` 文件，按指南校验、解压并试寄第一封信。[下载 Linux 预览版](https://github.com/realhdx/xdev/releases/tag/linux-mail-v1.1.1-preview.1) · [Linux 安装与配对](linux-mail/README.md)
 
 ### Windows Pair
 

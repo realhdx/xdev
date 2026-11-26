@@ -37,7 +37,7 @@ AI tools with local MCP support or permission to run local commands can use xdev
 
 ### Linux Mail
 
-The Linux messaging preview uses Python 3 and has been tested on Ubuntu under WSL and on a cloud-hosted Debian 13 system. Download the `.tar.gz` and its matching `.sha256` file, then follow the guide to unpack it and send your first letter. An existing SSH pairing can connect your mailbox to Windows Pair or another Linux host. [Download the preview](https://github.com/realhdx/xdev/releases/tag/linux-mail-v1.1.0-preview.1) · [Linux installation and pairing](linux-mail/README.en.md)
+Linux Mail `1.1.1-preview.1` uses Python 3 and an existing SSH pairing to exchange letters with Windows or another Linux host. Linux senders can now use the original letter ID to see whether a letter is waiting for the recipient chat to wake, has been read by that chat, or has received a reply. Download the `.tar.gz` and its matching `.sha256` file, then follow the guide to verify the archive, unpack it and send your first letter. [Download the Linux preview](https://github.com/realhdx/xdev/releases/tag/linux-mail-v1.1.1-preview.1) · [Linux installation and pairing](linux-mail/README.en.md)
 
 ### Windows Pair
 
